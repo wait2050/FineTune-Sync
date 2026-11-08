@@ -16,7 +16,7 @@ final class HUDWindowController: MediaKeyHUDPresenting {
     private var hideTask: Task<Void, Never>?
     private var styleAtLastShow: HUDStyle = .tahoe
 
-    /// Slider fraction in [0, 1]. The wiring site converts to gain using the current device's tier.
+    /// Slider fraction in [0, 1]. The wiring site converts to FineTune's master gain using the software curve.
     var volumeWriter: ((Double) -> Void)?
 
     // MARK: - Suppression-degraded tracking

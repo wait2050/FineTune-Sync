@@ -136,28 +136,12 @@ struct FineTuneApp: App {
         let hud = HUDWindowController(settingsManager: settings, mediaKeyStatus: statusService, popupVisibility: popupService)
         let feedbackPlayer = VolumeFeedbackPlayer()
 
-        // Wire the interactive Tahoe slider back to the device volume monitor.
-        // Mirrors the mute semantics applied for media-key drags (auto-unmute
-        // when ramping above 0 from muted; auto-mute when dragging down to 0)
-        // so the HUD slider and F11/F12 behave identically.
+        // The HUD slider and media keys share the popup's master volume.
         hud.volumeWriter = { [weak engine] sliderFraction in
             guard let engine else { return }
-            let volumeMonitor = engine.deviceVolumeMonitor
-            let deviceID = volumeMonitor.defaultDeviceID
-            guard deviceID.isValid else { return }
-            let tier = volumeMonitor.outputVolumeBackend(for: deviceID)
-            let currentMute = volumeMonitor.muteStates[deviceID] ?? false
-            let willBeSilent = sliderFraction <= 0.001
-            if currentMute && !willBeSilent {
-                volumeMonitor.setMute(for: deviceID, to: false)
-            } else if !currentMute && willBeSilent {
-                volumeMonitor.setMute(for: deviceID, to: true)
-            }
-            let gain = VolumeMapping.systemGain(forSliderFraction: sliderFraction, tier: tier)
-            volumeMonitor.setVolume(for: deviceID, to: gain)
-            feedbackPlayer.requestFeedback(
-                gain: VolumeFeedback.gain(tier: tier, sliderFraction: sliderFraction)
-            )
+            let gain = VolumeMapping.sliderToGain(sliderFraction)
+            engine.setMasterVolume(gain)
+            feedbackPlayer.requestFeedback(gain: gain)
         }
 
         let monitor = MediaKeyMonitor(
@@ -193,8 +177,8 @@ struct FineTuneApp: App {
         let launchID = launchVolumeMonitor.defaultDeviceID
         let launchState = MenuBarIconState.baseline(
             style: settings.appSettings.menuBarIconStyle,
-            volume: launchVolumeMonitor.volumes[launchID] ?? 1.0,
-            muted: launchVolumeMonitor.muteStates[launchID] ?? false,
+            volume: Float(VolumeMapping.gainToSlider(engine.masterVolume)),
+            muted: engine.isMasterMuted || engine.masterVolume == 0,
             deviceSymbol: MenuBarDeviceIconResolver.resolveSymbol(
                 priorityOrder: settings.devicePriorityOrder,
                 outputDevices: engine.deviceMonitor.outputDevices,

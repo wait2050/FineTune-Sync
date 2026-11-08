@@ -42,7 +42,7 @@ nonisolated struct AppSettings: Codable, Equatable {
 
     // Media Keys & HUD
     var hudStyle: HUDStyle = .tahoe                // Visual style of the volume HUD
-    var mediaKeyControlEnabled: Bool = true        // Intercept F10/F11/F12 to drive the default output device
+    var mediaKeyControlEnabled: Bool = true        // Intercept F10/F11/F12 to drive FineTune's master volume
     var volumeHotkeyStep: VolumeHotkeyStep = .normal  // Slider-domain step per keypress; user-configurable
 
     // Global Hotkeys
@@ -96,8 +96,11 @@ final class SettingsManager {
         var appVolumes: [String: Float] = [:]
         var appDeviceRouting: [String: String] = [:]  // bundleID → deviceUID
         var appMutes: [String: Bool] = [:]  // bundleID → isMuted
+        var masterVolume: Float = 1.0  // Linear PCM gain, independent of app/device levels
+        var masterMuted: Bool = false
         var appBoosts: [String: Float] = [:]  // bundleID → boost rawValue (1.0, 2.0, 3.0, 4.0)
         var appEQSettings: [String: EQSettings] = [:]  // bundleID → EQ settings
+        var deviceEQSettings: [String: EQSettings] = [:]  // output device UID → EQ settings
         var appSettings: AppSettings = AppSettings()  // App-wide settings
         var systemSoundsFollowsDefault: Bool = true  // Whether system sounds follows macOS default
         var appDeviceSelectionMode: [String: DeviceSelectionMode] = [:]  // bundleID → selection mode
@@ -155,8 +158,12 @@ final class SettingsManager {
                 .mapValues { min($0, 1.0) }  // Clamp old volumes > 1.0 (boost is now per-app)
             appDeviceRouting = try c.decodeIfPresent([String: String].self, forKey: .appDeviceRouting) ?? [:]
             appMutes = try c.decodeIfPresent([String: Bool].self, forKey: .appMutes) ?? [:]
+            let master = try c.decodeIfPresent(Float.self, forKey: .masterVolume) ?? 1.0
+            masterVolume = master.isFinite ? max(0, min(1, master)) : 1.0
+            masterMuted = try c.decodeIfPresent(Bool.self, forKey: .masterMuted) ?? false
             appBoosts = try c.decodeIfPresent([String: Float].self, forKey: .appBoosts) ?? [:]
             appEQSettings = try c.decodeIfPresent([String: EQSettings].self, forKey: .appEQSettings) ?? [:]
+            deviceEQSettings = try c.decodeIfPresent([String: EQSettings].self, forKey: .deviceEQSettings) ?? [:]
             var decodedAppSettings = try c.decodeIfPresent(AppSettings.self, forKey: .appSettings) ?? AppSettings()
             if !decodedAppSettings.defaultNewAppVolume.isFinite || decodedAppSettings.defaultNewAppVolume < 0 {
                 decodedAppSettings.defaultNewAppVolume = 1.0
@@ -216,7 +223,37 @@ final class SettingsManager {
         scheduleSave()
     }
 
+    var masterVolume: Float { settings.masterVolume }
+    var masterMuted: Bool { settings.masterMuted }
+
+    func setMasterVolume(_ gain: Float, muted: Bool) {
+        settings.masterVolume = gain.isFinite ? max(0, min(1, gain)) : 1.0
+        settings.masterMuted = muted
+        scheduleSave()
+    }
+
     var outputDelayEnabled: Bool { settings.outputDelayEnabled }
+
+    var deviceEQSettings: [String: EQSettings] {
+        get { settings.deviceEQSettings }
+        set {
+            settings.deviceEQSettings = newValue.mapValues {
+                EQSettings(bandGains: $0.clampedGains, isEnabled: $0.isEnabled)
+            }
+            scheduleSave()
+        }
+    }
+
+    func getDeviceEQSettings(for uid: String) -> EQSettings {
+        settings.deviceEQSettings[uid] ?? .disabled
+    }
+
+    func setDeviceEQSettings(_ eqSettings: EQSettings, for uid: String) {
+        settings.deviceEQSettings[uid] = EQSettings(
+            bandGains: eqSettings.clampedGains, isEnabled: eqSettings.isEnabled
+        )
+        scheduleSave()
+    }
 
     func setOutputDelayEnabled(_ enabled: Bool) {
         settings.outputDelayEnabled = enabled
@@ -865,11 +902,14 @@ final class SettingsManager {
 
     /// Resets all per-app settings and app-wide settings to defaults
     func resetAllSettings() {
+        settings.masterVolume = 1.0
+        settings.masterMuted = false
         settings.appVolumes.removeAll()
         settings.appBoosts.removeAll()
         settings.appDeviceRouting.removeAll()
         settings.appMutes.removeAll()
         settings.appEQSettings.removeAll()
+        settings.deviceEQSettings.removeAll()
         settings.pinnedApps.removeAll()
         settings.pinnedAppInfo.removeAll()
         settings.ignoredApps.removeAll()

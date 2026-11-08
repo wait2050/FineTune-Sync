@@ -106,7 +106,8 @@ private func processWithDefaults(
     eqProc: EQProcessor? = nil,
     autoEQProc: AutoEQProcessor? = nil,
     loudnessEqualizerProc: LoudnessEqualizer? = nil,
-    loudnessCompensatorProc: LoudnessCompensator? = nil
+    loudnessCompensatorProc: LoudnessCompensator? = nil,
+    deviceEQProc: EQProcessor? = nil
 ) {
     ProcessTapController.processMappedBuffers(
         inputBuffers: input.bufferList,
@@ -121,7 +122,8 @@ private func processWithDefaults(
         eqProc: eqProc,
         autoEQProc: autoEQProc,
         loudnessEqualizerProc: loudnessEqualizerProc,
-        loudnessCompensatorProc: loudnessCompensatorProc
+        loudnessCompensatorProc: loudnessCompensatorProc,
+        deviceEQProc: deviceEQProc
     )
 }
 
@@ -1185,5 +1187,109 @@ struct LoudnessIntegrationTests {
         }
         #expect(diffCount > 0,
                 "Adding loudness equalizer should change output beyond compensator alone")
+    }
+}
+
+extension ProcessingChainTests {
+    @Test("Output EQ affects the actual render chain independently and cascades with app EQ",
+          arguments: [44100.0, 48000.0, 96000.0])
+    func independentOutputEQ(sampleRate: Double) {
+        let frames = 8192
+        let input = TestABL(buffers: [(channels: 2, frames: frames)])
+        for frame in 0..<frames {
+            let sample = Float(0.02 * sin(2 * Double.pi * 1000 * Double(frame) / sampleRate))
+            input.data(at: 0)[frame * 2] = sample
+            input.data(at: 0)[frame * 2 + 1] = -sample
+        }
+        func render(appGain: Float?, deviceGain: Float?, deviceEnabled: Bool = true) -> Double {
+            let appEQ = EQProcessor(sampleRate: sampleRate)
+            var appSettings = EQSettings.disabled
+            if let appGain {
+                appSettings.isEnabled = true
+                appSettings.bandGains[5] = appGain
+            }
+            appEQ.updateSettings(appSettings)
+            let deviceEQ = EQProcessor(sampleRate: sampleRate)
+            var deviceSettings = EQSettings(isEnabled: deviceEnabled)
+            deviceSettings.bandGains[5] = deviceGain ?? 0
+            deviceEQ.updateSettings(deviceSettings)
+            let output = TestABL(buffers: [(channels: 2, frames: frames)])
+            var volume: Float = 1
+            processWithDefaults(input: input, output: output, currentVol: &volume,
+                                eqProc: appEQ, deviceEQProc: deviceEQ)
+            var energy: Double = 0
+            for frame in (frames / 2)..<frames {
+                let left = output.data(at: 0)[frame * 2]
+                let right = output.data(at: 0)[frame * 2 + 1]
+                #expect(left.isFinite && right.isFinite)
+                #expect(abs(left + right) < 0.000001)
+                energy += Double(left * left)
+            }
+            return sqrt(energy / Double(frames / 2))
+        }
+        let baseline = render(appGain: nil, deviceGain: nil)
+        let cut = render(appGain: nil, deviceGain: -6)
+        let combined = render(appGain: 3, deviceGain: -6)
+        let appOnly = render(appGain: 3, deviceGain: nil)
+        let bypassed = render(appGain: 3, deviceGain: -6, deviceEnabled: false)
+        #expect(abs(20 * log10(cut / baseline) + 6) < 0.1)
+        #expect(abs(20 * log10(combined / baseline) + 3) < 0.1)
+        #expect(abs(appOnly - bypassed) < 0.000001)
+    }
+}
+
+@Suite("Master volume — final audio attenuation")
+struct MasterVolumeProcessorTests {
+    @Test("Interleaved and planar outputs share the same per-frame ramp")
+    func matchedChannelRamps() {
+        let buffers = TestABL(buffers: [(2, 64), (1, 64), (4, 32)])
+        for index in 0..<3 { fill(buffers, bufferIndex: index, value: 0.8) }
+        let final = MasterVolumeProcessor.process(buffers.bufferList, targetGain: 0.25, currentGain: 1, rampCoefficient: 0.1)
+        for frame in 0..<64 {
+            let left = buffers.data(at: 0)[frame * 2]
+            #expect(left == buffers.data(at: 0)[frame * 2 + 1])
+            #expect(left == buffers.data(at: 1)[frame])
+            #expect(left >= 0.2 && left < 0.8)
+            if frame > 0 { #expect(left <= buffers.data(at: 0)[(frame - 1) * 2]) }
+            if frame < 32 {
+                for channel in 0..<4 { #expect(left == buffers.data(at: 2)[frame * 4 + channel]) }
+            }
+        }
+        #expect(abs(final - 0.25) < 0.001)
+        #expect(abs(buffers.data(at: 0)[126] - final * 0.8) < 0.000001)
+    }
+
+    @Test("Master attenuation remains exact after loudness processing, EQ and limiting")
+    func attenuationAfterDSP() {
+        let input = TestABL(buffers: [(2, 4096)])
+        let output = TestABL(buffers: [(2, 4096)])
+        fill(input, bufferIndex: 0, value: 0.6)
+        let eq = EQProcessor(sampleRate: 48000)
+        eq.updateSettings(EQSettings(bandGains: [6, 3, 0, 0, 0, 0, 0, 0, 0, 0]))
+        var loudnessSettings = LoudnessEqualizerSettings()
+        loudnessSettings.enabled = true
+        let loudness = LoudnessEqualizer(settings: loudnessSettings, sampleRate: 48000)
+        var appVolume: Float = 2
+        processWithDefaults(input: input, output: output, targetVol: 2, currentVol: &appVolume, eqProc: eq, loudnessEqualizerProc: loudness)
+        let baseline = Array(UnsafeBufferPointer(start: output.data(at: 0), count: 8192))
+        #expect(baseline.contains { abs($0) > 0.1 })
+        _ = MasterVolumeProcessor.process(output.bufferList, targetGain: 0.25, currentGain: 0.25, rampCoefficient: 1)
+        for index in 0..<8192 { #expect(output.data(at: 0)[index] == baseline[index] * 0.25) }
+        _ = MasterVolumeProcessor.process(output.bufferList, targetGain: 0, currentGain: 0, rampCoefficient: 1)
+        #expect((0..<8192).allSatisfy { output.data(at: 0)[$0] == 0 })
+    }
+
+    @Test("Mute fade reaches exact silence and unmute converges without overshoot")
+    func muteAndRestore() {
+        let output = TestABL(buffers: [(2, 2048)])
+        fill(output, bufferIndex: 0, value: 1)
+        let muted = MasterVolumeProcessor.process(output.bufferList, targetGain: 0, currentGain: 0.7, rampCoefficient: 0.01)
+        #expect(muted == 0)
+        #expect(output.data(at: 0)[4095] == 0)
+        #expect(output.data(at: 0)[0] > 0)
+        fill(output, bufferIndex: 0, value: 1)
+        let restored = MasterVolumeProcessor.process(output.bufferList, targetGain: 0.7, currentGain: muted, rampCoefficient: 0.01)
+        #expect(abs(restored - 0.7) < 0.00001)
+        #expect((0..<4096).allSatisfy { output.data(at: 0)[$0] >= 0 && output.data(at: 0)[$0] <= 0.7 })
     }
 }

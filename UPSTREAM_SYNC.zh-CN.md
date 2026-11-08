@@ -1,4 +1,4 @@
-# 中文延迟增强版如何跟进官方更新
+# FineTune Sync 如何跟进官方更新
 
 本仓库是 [ronitsingh10/FineTune](https://github.com/ronitsingh10/FineTune) 的公开 Fork。**公开 Fork 可以合并官方更新**；公开或私有本身并不决定能否合并，关键是保留 Git 历史，并将官方仓库作为上游。
 
@@ -18,7 +18,7 @@
 4. 工作流会对这个合并提交运行独立测试、本地化覆盖检查和定制版构建，并在 PR 中报告结果。即使用 GitHub 自带令牌创建的 PR 不触发普通 PR 工作流，显式验证任务也会执行。
 5. 合并有冲突时停止，在 Actions 摘要中列出冲突文件。main 保持原样，需要手动处理后再继续。
 6. 审核合并 PR 后，main 的 CI 会再次构建，生成 `FineTune-CN-macOS` 下载工件。该工件保留 30 天。
-7. 推送 `cn-v*` 标签，或手动运行 **Release Chinese delay edition** 并指定已有标签，会先验证该版本，再发布到本仓库 Releases。
+7. 推送 `cn-v*` 标签，或手动运行 **Release FineTune Sync** 并指定已有标签，会先验证该版本，再发布到本仓库 Releases。
 
 例子：
 

@@ -29,6 +29,7 @@ final class RecordingProcessTapController: ProcessTapControlling {
     /// the source-type's identity (defensive against future mutations).
     struct TapInitialStateSnapshot: Equatable {
         var eqSettings: EQSettings
+        var deviceEQSettings: EQSettings
         var autoEQProfileID: String?
         var autoEQPreampEnabled: Bool
         var loudnessVolume: Float
@@ -38,6 +39,7 @@ final class RecordingProcessTapController: ProcessTapControlling {
         @MainActor
         init(_ s: TapInitialState) {
             self.eqSettings = s.eqSettings
+            self.deviceEQSettings = s.deviceEQSettings
             self.autoEQProfileID = s.autoEQProfile?.id
             self.autoEQPreampEnabled = s.autoEQPreampEnabled
             self.loudnessVolume = s.loudnessVolume
@@ -51,10 +53,13 @@ final class RecordingProcessTapController: ProcessTapControlling {
 
     // Mutable surface — recorded as plain property writes (not events).
     var volume: Float = 1.0
+    var masterGain: Float = 1.0
+    private(set) var masterGainAtActivation: Float?
     var isMuted: Bool = false
     var currentDeviceVolume: Float = 1.0
     var isDeviceMuted: Bool = false
     var audioLevel: Float = 0.0
+    private(set) var outputEQSettings: EQSettings = .disabled
     private(set) var currentDeviceUIDs: [String]
     var currentDeviceUID: String? { currentDeviceUIDs.first }
     var tapSourceDeviceUID: String? = nil
@@ -65,7 +70,13 @@ final class RecordingProcessTapController: ProcessTapControlling {
     }
 
     func activate(initial: TapInitialState) throws {
+        masterGainAtActivation = masterGain
+        outputEQSettings = initial.deviceEQSettings
         events.append(.activate(TapInitialStateSnapshot(initial)))
+    }
+
+    func updateOutputEQSettings(_ settings: EQSettings) {
+        outputEQSettings = settings
     }
 
     func invalidate() {

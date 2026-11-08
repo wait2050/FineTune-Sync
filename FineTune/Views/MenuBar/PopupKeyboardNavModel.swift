@@ -5,6 +5,7 @@ import Foundation
 @Observable
 final class PopupKeyboardNavModel {
     enum RowID: Hashable {
+        case master
         case device(uid: String)
         case app(persistenceID: String)
     }
@@ -14,13 +15,15 @@ final class PopupKeyboardNavModel {
     func syncOrder(
         activeDevices: [AudioDevice],
         appPersistenceIDs: [String],
-        isEditingPriority: Bool
+        isEditingPriority: Bool,
+        includeMaster: Bool = false
     ) {
         guard !isEditingPriority else {
             orderedRowIDs = []
             return
         }
         var next: [RowID] = []
+        if includeMaster { next.append(.master) }
         next.reserveCapacity(activeDevices.count + appPersistenceIDs.count)
         for device in activeDevices {
             next.append(.device(uid: device.uid))
@@ -52,6 +55,7 @@ final class PopupKeyboardNavModel {
 
     func defaultFocus(defaultOutputUID: String?) -> RowID? {
         guard !orderedRowIDs.isEmpty else { return nil }
+        if orderedRowIDs.contains(.master) { return .master }
         if let uid = defaultOutputUID {
             let candidate = RowID.device(uid: uid)
             if orderedRowIDs.contains(candidate) {

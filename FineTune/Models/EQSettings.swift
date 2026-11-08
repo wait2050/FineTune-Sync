@@ -44,4 +44,5 @@ nonisolated struct EQSettings: Codable, Equatable {
 
     /// Flat EQ preset
     static let flat = EQSettings()
+    static let disabled = EQSettings(isEnabled: false)
 }

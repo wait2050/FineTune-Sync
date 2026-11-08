@@ -53,6 +53,9 @@ final class ProcessTapController: ProcessTapControlling {
     private nonisolated(unsafe) var _primaryCurrentVolume: Float = 1.0
     /// Current ramped volume for secondary tap during crossfade
     private nonisolated(unsafe) var _secondaryCurrentVolume: Float = 1.0
+    private nonisolated(unsafe) var _masterGain: Float = 1.0
+    private nonisolated(unsafe) var _primaryCurrentMasterGain: Float = 1.0
+    private nonisolated(unsafe) var _secondaryCurrentMasterGain: Float = 1.0
     /// Emergency silence flag - zeroes output immediately (used during destructive device switch)
     /// Unlike _isMuted, this bypasses all processing including VU metering
     private nonisolated(unsafe) var _forceSilence: Bool = false
@@ -123,6 +126,7 @@ final class ProcessTapController: ProcessTapControlling {
     private nonisolated(unsafe) var rampCoefficient: Float = 0.0007
     private nonisolated(unsafe) var secondaryRampCoefficient: Float = 0.0007
     private nonisolated(unsafe) var eqProcessor: EQProcessor?
+    private nonisolated(unsafe) var deviceEQProcessor: EQProcessor?
     private nonisolated(unsafe) var autoEQProcessor: AutoEQProcessor?
     private nonisolated(unsafe) var loudnessCompensator: LoudnessCompensator?
     private nonisolated(unsafe) var loudnessEqualizerProcessor: LoudnessEqualizer?
@@ -133,6 +137,7 @@ final class ProcessTapController: ProcessTapControlling {
     /// Each tap needs its own biquad delay buffers — sharing would corrupt filter state
     /// because both callbacks write concurrently from different HAL I/O threads.
     private nonisolated(unsafe) var secondaryEQProcessor: EQProcessor?
+    private nonisolated(unsafe) var secondaryDeviceEQProcessor: EQProcessor?
     private nonisolated(unsafe) var secondaryAutoEQProcessor: AutoEQProcessor?
     private nonisolated(unsafe) var secondaryLoudnessCompensator: LoudnessCompensator?
     private nonisolated(unsafe) var secondaryLoudnessEqualizerProcessor: LoudnessEqualizer?
@@ -202,6 +207,11 @@ final class ProcessTapController: ProcessTapControlling {
         set { _volume = newValue }
     }
 
+    var masterGain: Float {
+        get { _masterGain }
+        set { _masterGain = newValue.isFinite ? max(0, min(1, newValue)) : 1 }
+    }
+
     var isMuted: Bool {
         get { _isMuted }
         set { _isMuted = newValue }
@@ -247,6 +257,11 @@ final class ProcessTapController: ProcessTapControlling {
     func updateEQSettings(_ settings: EQSettings) {
         eqProcessor?.updateSettings(settings)
         secondaryEQProcessor?.updateSettings(settings)
+    }
+
+    func updateOutputEQSettings(_ settings: EQSettings) {
+        deviceEQProcessor?.updateSettings(settings)
+        secondaryDeviceEQProcessor?.updateSettings(settings)
     }
 
     func updateAutoEQProfile(_ profile: AutoEQProfile?) {
@@ -642,6 +657,7 @@ final class ProcessTapController: ProcessTapControlling {
         logger.debug("Ramp coefficient: \(self.rampCoefficient)")
 
         eqProcessor = EQProcessor(sampleRate: sampleRate)
+        deviceEQProcessor = EQProcessor(sampleRate: sampleRate)
         autoEQProcessor = AutoEQProcessor(sampleRate: sampleRate)
         loudnessEqualizerProcessor = LoudnessEqualizer(settings: initial.loudnessEqualizerSettings, sampleRate: Float(sampleRate))
         loudnessCompensator = LoudnessCompensator(sampleRate: sampleRate)
@@ -649,6 +665,7 @@ final class ProcessTapController: ProcessTapControlling {
         // Apply persisted state to fresh processors before AudioDeviceStart so the
         // first IOProc callback sees correct EQ/AutoEQ/Loudness coefficients.
         eqProcessor?.updateSettings(initial.eqSettings)
+        deviceEQProcessor?.updateSettings(initial.deviceEQSettings)
         autoEQProcessor?.setPreampEnabled(initial.autoEQPreampEnabled)
         if let profile = initial.autoEQProfile {
             autoEQProcessor?.updateProfile(profile)
@@ -695,6 +712,7 @@ final class ProcessTapController: ProcessTapControlling {
         // Seed the ramp target before AudioDeviceStart so the first IOProc callback
         // ramps from userVolume→userVolume (no-op) instead of 1.0→userVolume.
         _primaryCurrentVolume = _volume
+        _primaryCurrentMasterGain = _masterGain
 
         // Reset output gate to armed; size the ramp/hold windows from device sample rate.
         _outputGateRawPhase = 0
@@ -875,6 +893,7 @@ final class ProcessTapController: ProcessTapControlling {
     /// Shared epilogue for invalidation. Clears EQ state and resets the reentrant guard.
     private func endInvalidation() {
         secondaryEQProcessor = nil
+        secondaryDeviceEQProcessor = nil
         secondaryAutoEQProcessor = nil
         secondaryLoudnessCompensator = nil
         secondaryLoudnessEqualizerProcessor = nil
@@ -1024,6 +1043,7 @@ final class ProcessTapController: ProcessTapControlling {
         secondaryRampCoefficient = 1 - exp(-1 / (Float(sampleRate) * rampTimeSeconds))
 
         _secondaryCurrentVolume = _primaryCurrentVolume
+        _secondaryCurrentMasterGain = _primaryCurrentMasterGain
 
         // Create independent EQ processors for the secondary tap.
         // Each tap needs its own biquad delay buffers — sharing would corrupt filter state
@@ -1033,6 +1053,10 @@ final class ProcessTapController: ProcessTapControlling {
             secEQ.updateSettings(settings)
         }
         secondaryEQProcessor = secEQ
+
+        let secDeviceEQ = EQProcessor(sampleRate: sampleRate)
+        secDeviceEQ.updateSettings(deviceEQProcessor?.currentSettings ?? .disabled)
+        secondaryDeviceEQProcessor = secDeviceEQ
 
         let secAutoEQ = AutoEQProcessor(sampleRate: sampleRate)
         if let profile = autoEQProcessor?.currentProfile {
@@ -1099,6 +1123,7 @@ final class ProcessTapController: ProcessTapControlling {
         _secondaryCallbackID = 0
         secondaryResources.destroy()
         secondaryEQProcessor = nil
+        secondaryDeviceEQProcessor = nil
         secondaryAutoEQProcessor = nil
         secondaryLoudnessCompensator = nil
         secondaryLoudnessEqualizerProcessor = nil
@@ -1117,14 +1142,17 @@ final class ProcessTapController: ProcessTapControlling {
         // The old primary processors may still be referenced by a just-completed primary callback,
         // so defer their deallocation to ensure no use-after-free on the RT thread.
         let oldEQ = eqProcessor
+        let oldDeviceEQ = deviceEQProcessor
         let oldAutoEQ = autoEQProcessor
         let oldLoudness = loudnessCompensator
         let oldLoudnessEqualizer = loudnessEqualizerProcessor
         eqProcessor = secondaryEQProcessor
+        deviceEQProcessor = secondaryDeviceEQProcessor
         autoEQProcessor = secondaryAutoEQProcessor
         loudnessCompensator = secondaryLoudnessCompensator
         loudnessEqualizerProcessor = secondaryLoudnessEqualizerProcessor
         secondaryEQProcessor = nil
+        secondaryDeviceEQProcessor = nil
         secondaryAutoEQProcessor = nil
         secondaryLoudnessCompensator = nil
         secondaryLoudnessEqualizerProcessor = nil
@@ -1132,9 +1160,10 @@ final class ProcessTapController: ProcessTapControlling {
         // Deferred cleanup: hold old processors alive briefly so any in-flight RT callback
         // that read the pointer before the swap finishes its buffer without accessing freed memory.
         // 0.5s is conservative — audio callbacks run at ~5ms intervals.
-        if oldEQ != nil || oldAutoEQ != nil || oldLoudness != nil || oldLoudnessEqualizer != nil {
+        if oldEQ != nil || oldDeviceEQ != nil || oldAutoEQ != nil || oldLoudness != nil || oldLoudnessEqualizer != nil {
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
                 _ = oldEQ
+                _ = oldDeviceEQ
                 _ = oldAutoEQ
                 _ = oldLoudness
                 _ = oldLoudnessEqualizer
@@ -1142,6 +1171,7 @@ final class ProcessTapController: ProcessTapControlling {
         }
 
         _primaryCurrentVolume = _secondaryCurrentVolume
+        _primaryCurrentMasterGain = _secondaryCurrentMasterGain
         _secondaryCurrentVolume = 0
         _primaryPreferredStereoLeftChannel = _secondaryPreferredStereoLeftChannel
         _primaryPreferredStereoRightChannel = _secondaryPreferredStereoRightChannel
@@ -1281,6 +1311,7 @@ final class ProcessTapController: ProcessTapControlling {
         if let deviceSampleRate = try? primaryResources.aggregateDeviceID.readNominalSampleRate() {
             rampCoefficient = 1 - exp(-1 / (Float(deviceSampleRate) * 0.030))
             eqProcessor?.updateSampleRate(deviceSampleRate)
+            deviceEQProcessor?.updateSampleRate(deviceSampleRate)
             autoEQProcessor?.updateSampleRate(deviceSampleRate)
             loudnessCompensator?.updateSampleRate(deviceSampleRate)
 
@@ -1364,7 +1395,8 @@ final class ProcessTapController: ProcessTapControlling {
         eqProc: EQProcessor?,
         autoEQProc: AutoEQProcessor?,
         loudnessEqualizerProc: LoudnessEqualizer?,
-        loudnessCompensatorProc: LoudnessCompensator?
+        loudnessCompensatorProc: LoudnessCompensator?,
+        deviceEQProc: EQProcessor? = nil
     ) {
         let inputBufferCount = inputBuffers.count
         let outputBufferCount = outputBuffers.count
@@ -1487,7 +1519,12 @@ final class ProcessTapController: ProcessTapControlling {
                 eq.process(input: outputSamples, output: outputSamples, frameCount: frameCount)
             }
 
-            // Per-device AutoEQ correction (after per-app EQ)
+            // Independent output-device EQ, followed by headphone correction.
+            if let deviceEQProc, deviceEQProc.isEnabled, eqCanProcessStereoInterleaved {
+                deviceEQProc.process(input: outputSamples, output: outputSamples, frameCount: frameCount)
+            }
+
+            // Per-device AutoEQ correction (after graphic EQ)
             if let autoEQProc, autoEQProc.isEnabled, eqCanProcessStereoInterleaved {
                 autoEQProc.process(input: outputSamples, output: outputSamples, frameCount: frameCount)
             }
@@ -1644,6 +1681,7 @@ final class ProcessTapController: ProcessTapControlling {
         let stereoLeft: Int
         let stereoRight: Int
         let eqProc: EQProcessor?
+        let deviceEQProc: EQProcessor?
         let autoEQProc: AutoEQProcessor?
         let loudnessEqualizerProc: LoudnessEqualizer?
         let loudnessCompensatorProc: LoudnessCompensator?
@@ -1658,6 +1696,7 @@ final class ProcessTapController: ProcessTapControlling {
             stereoLeft = _primaryPreferredStereoLeftChannel
             stereoRight = _primaryPreferredStereoRightChannel
             eqProc = eqProcessor
+            deviceEQProc = deviceEQProcessor
             autoEQProc = autoEQProcessor
             loudnessEqualizerProc = loudnessEqualizerProcessor
             loudnessCompensatorProc = loudnessCompensator
@@ -1670,6 +1709,7 @@ final class ProcessTapController: ProcessTapControlling {
             stereoLeft = _secondaryPreferredStereoLeftChannel
             stereoRight = _secondaryPreferredStereoRightChannel
             eqProc = secondaryEQProcessor
+            deviceEQProc = secondaryDeviceEQProcessor
             autoEQProc = secondaryAutoEQProcessor
             loudnessEqualizerProc = secondaryLoudnessEqualizerProcessor
             loudnessCompensatorProc = secondaryLoudnessCompensator
@@ -1688,13 +1728,23 @@ final class ProcessTapController: ProcessTapControlling {
             eqProc: eqProc,
             autoEQProc: autoEQProc,
             loudnessEqualizerProc: loudnessEqualizerProc,
-            loudnessCompensatorProc: loudnessCompensatorProc
+            loudnessCompensatorProc: loudnessCompensatorProc,
+            deviceEQProc: deviceEQProc
         )
 
+        // Apply total volume LAST so loudness equalization cannot undo attenuation.
+        // Primary/secondary have separate ramp state because their callbacks overlap.
+        let currentMasterGain = isPrimary ? _primaryCurrentMasterGain : _secondaryCurrentMasterGain
+        let nextMasterGain = MasterVolumeProcessor.process(
+            outputBuffers, targetGain: _masterGain, currentGain: currentMasterGain,
+            rampCoefficient: rampCoeff
+        )
         if isPrimary {
             _primaryCurrentVolume = currentVol
+            _primaryCurrentMasterGain = nextMasterGain
         } else {
             _secondaryCurrentVolume = currentVol
+            _secondaryCurrentMasterGain = nextMasterGain
         }
     }
 }

@@ -34,7 +34,7 @@ Bluetooth buffering can change after reconnects, codec/profile changes, and paus
 - Missing keys in older settings decode to mode off and zero delays. No migration rewrites existing app settings.
 - The local edition uses a distinct aggregate-name prefix for startup cleanup. Hosted unit tests skip audio capture, orphan cleanup, permissions, hotkeys, and use temporary settings.
 
-The extension inherits FineTune's existing processing choices: for a multi-output app, its app EQ and the primary output's AutoEQ/loudness state are shared across outputs. It does not add independent per-output EQ or change the existing multi-output software-volume policy. Layouts requiring more than 64 MiB of delay/scratch memory per IOProc are rejected instead of allocating unbounded memory.
+Each output device has an optional, UID-keyed 10-band EQ, opened with the EQ button in its output-device row. It applies to every managed app routed to that device and cascades with the app's own EQ. Device curves and bypass states survive reconnects and restarts. Enabling device EQ uses independent renderers even when delay compensation is off. The primary output's AutoEQ/loudness state and the existing multi-output software-volume policy are retained. Layouts requiring more than 64 MiB of delay/scratch memory per IOProc are rejected instead of allocating unbounded memory.
 
 ## Verification
 

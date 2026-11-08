@@ -9,6 +9,8 @@
 protocol ProcessTapControlling: AnyObject, Sendable {
     var app: AudioApp { get }
     var volume: Float { get set }
+    /// Final attenuation after DSP/limiting. Shared across every FineTune output.
+    var masterGain: Float { get set }
     var isMuted: Bool { get set }
     var currentDeviceVolume: Float { get set }
     var isDeviceMuted: Bool { get set }
@@ -20,6 +22,7 @@ protocol ProcessTapControlling: AnyObject, Sendable {
     func invalidate()
     func invalidateAsync() async
     func updateEQSettings(_ settings: EQSettings)
+    func updateOutputEQSettings(_ settings: EQSettings)
     func updateAutoEQProfile(_ profile: AutoEQProfile?)
     func setAutoEQPreampEnabled(_ enabled: Bool)
     func updateLoudnessCompensation(volume: Float, enabled: Bool)
@@ -35,6 +38,10 @@ protocol ProcessTapControlling: AnyObject, Sendable {
 }
 
 extension ProcessTapControlling {
+    func updateOutputEQSettings(_ settings: EQSettings) {
+        // Controllers without an output EQ stage (including existing test doubles).
+    }
+
     /// Convenience activation with default state. Production callers must pass an
     /// `initial:` populated from persisted settings — defaults leave the first audio
     /// callbacks running with no EQ/AutoEQ/Loudness and unity volume ramp.

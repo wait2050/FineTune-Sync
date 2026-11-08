@@ -181,3 +181,19 @@ struct PopupKeyboardNavModelTests {
         #expect(!model.orderedRowIDs.contains(.app(persistenceID: "com.test.a")))
     }
 }
+
+@Suite("Popup keyboard navigation — master volume") @MainActor
+struct MasterVolumeNavigationTests {
+    @Test func outputNavigationStartsWithMasterAndInputNavigationOmitsIt() {
+        let model = PopupKeyboardNavModel()
+        let device = makeDevice(uid: "speaker")
+        model.syncOrder(activeDevices: [device], appPersistenceIDs: ["music"], isEditingPriority: false, includeMaster: true)
+        #expect(model.defaultFocus(defaultOutputUID: device.uid) == .master)
+        #expect(model.next(after: .master) == .device(uid: device.uid))
+        #expect(model.previous(before: .device(uid: device.uid)) == .master)
+        model.syncOrder(activeDevices: [device], appPersistenceIDs: [], isEditingPriority: false)
+        #expect(!model.orderedRowIDs.contains(.master))
+        model.syncOrder(activeDevices: [device], appPersistenceIDs: [], isEditingPriority: true, includeMaster: true)
+        #expect(model.orderedRowIDs.isEmpty)
+    }
+}

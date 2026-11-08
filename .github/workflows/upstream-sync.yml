@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   prepare:
-    if: github.repository == 'wait2050/FineTune'
+    if: github.repository == 'wait2050/FineTune-Sync'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -63,14 +63,14 @@ jobs:
           git push --force-with-lease="refs/heads/automation/upstream:$PREVIOUS_HEAD" \
             origin HEAD:refs/heads/automation/upstream
           cat > "$RUNNER_TEMP/upstream-pr.md" <<'BODY'
-          合并官方 `ronitsingh10/FineTune:main` 的新源码，保留本仓库的中文界面、独立延迟及微调控件。
+          合并官方 `ronitsingh10/FineTune:main` 的新源码，保留本仓库的中文界面、延迟补偿、总音量、设备 EQ 及微调控件。
 
           此 PR 不会自动合并。创建后工作流会直接验证合并结果，并在下方报告测试、汉化覆盖及定制构建结果。请确认结果和音频行为后再合并。
 
           如果工作流遇到合并冲突，会停止并在 Actions 的运行摘要中列出文件，不覆盖 main。升级流程见 `UPSTREAM_SYNC.zh-CN.md`。
           BODY
           PR_URL="$(gh pr create --base main --head automation/upstream \
-            --title '同步官方 FineTune 更新（保留中文及独立延迟）' \
+            --title '同步官方 FineTune 更新（保留同步、总音量、设备 EQ 与中文）' \
             --body-file "$RUNNER_TEMP/upstream-pr.md")"
           PR_NUMBER="${PR_URL##*/}"
           printf 'changed=true\nsha=%s\npr=%s\n' "$MERGED_SHA" "$PR_NUMBER" >> "$GITHUB_OUTPUT"

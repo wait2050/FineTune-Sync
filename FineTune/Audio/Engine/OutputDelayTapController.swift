@@ -21,9 +21,8 @@ final class OutputDelayRegistry {
     }
 }
 
-/// Opt-in fan-out using the existing controller once per selected output. With compensation
-/// disabled there is exactly one original controller, including its normal multi-output
-/// aggregate, channel mapping, drift compensation, and crossfade behavior.
+/// Uses independent renderers when delay compensation or output-device EQ is enabled.
+/// Other routes retain the original multi-output aggregate and crossfade behavior.
 @MainActor
 final class OutputDelayTapController: ProcessTapControlling {
     typealias Factory = @MainActor ([String], String?, OutputDelayControl?) throws -> any ProcessTapControlling
@@ -31,6 +30,8 @@ final class OutputDelayTapController: ProcessTapControlling {
     private let registry: OutputDelayRegistry
     private let factory: Factory
     private var enabled: Bool
+    private var deviceEQSettings: [String: EQSettings]
+    private var usesIndependentOutputs = false
     private var active = false
     private var sourceUID: String?
     private var targets: [String]
@@ -42,6 +43,7 @@ final class OutputDelayTapController: ProcessTapControlling {
     private var operationID: UInt64 = 0
 
     var volume: Float = 1 { didSet { for child in allChildren { child.volume = volume } } }
+    var masterGain: Float = 1 { didSet { for child in allChildren { child.masterGain = masterGain } } }
     var isMuted: Bool = false { didSet { for child in allChildren { child.isMuted = isMuted } } }
     var currentDeviceVolume: Float = 1 { didSet { for child in allChildren { child.currentDeviceVolume = currentDeviceVolume } } }
     var isDeviceMuted: Bool = false { didSet { for child in allChildren { child.isDeviceMuted = isDeviceMuted } } }
@@ -52,13 +54,15 @@ final class OutputDelayTapController: ProcessTapControlling {
     var audioLevel: Float { children.map(\.audioLevel).max() ?? 0 }
 
     init(app: AudioApp, targetDeviceUIDs: [String], sourceUID: String?, enabled: Bool,
-         registry: OutputDelayRegistry, factory: @escaping Factory) {
+         registry: OutputDelayRegistry, deviceEQSettings: [String: EQSettings] = [:],
+         factory: @escaping Factory) {
         precondition(!targetDeviceUIDs.isEmpty)
         self.app = app
         var seen = Set<String>()
         targets = targetDeviceUIDs.filter { seen.insert($0).inserted }
         self.sourceUID = sourceUID
         self.enabled = enabled
+        self.deviceEQSettings = deviceEQSettings
         self.registry = registry
         self.factory = factory
     }
@@ -66,22 +70,32 @@ final class OutputDelayTapController: ProcessTapControlling {
     func activate(initial: TapInitialState) throws {
         guard !active else { return }
         self.initial = initial
-        children = try makeChildren(for: targets, enabled: enabled, muted: isMuted)
+        usesIndependentOutputs = needsIndependentOutputs(for: targets, enabled: enabled, settings: deviceEQSettings)
+        children = try makeChildren(for: targets, sourceUID: sourceUID, enabled: enabled,
+                                    split: usesIndependentOutputs, deviceEQSettings: deviceEQSettings, muted: isMuted)
         active = true
     }
 
-    private func makeChildren(for uids: [String], enabled: Bool, muted: Bool) throws -> [any ProcessTapControlling] {
-        let groups = enabled ? uids.map { [$0] } : [uids]
+    private func needsIndependentOutputs(for uids: [String], enabled: Bool, settings: [String: EQSettings]) -> Bool {
+        enabled || uids.contains { settings[$0]?.isEnabled == true }
+    }
+
+    private func makeChildren(for uids: [String], sourceUID: String?, enabled: Bool,
+                              split: Bool, deviceEQSettings: [String: EQSettings], muted: Bool) throws -> [any ProcessTapControlling] {
+        let groups = split ? uids.map { [$0] } : [uids]
         var created: [any ProcessTapControlling] = []
         do {
             for group in groups {
                 let child = try factory(group, sourceUID, enabled ? registry.control(for: group[0]) : nil)
                 created.append(child) // Include partially-activated controllers in cleanup.
                 child.volume = volume
+                child.masterGain = masterGain
                 child.isMuted = muted
                 child.currentDeviceVolume = currentDeviceVolume
                 child.isDeviceMuted = isDeviceMuted
-                try child.activate(initial: initial)
+                var state = initial
+                state.deviceEQSettings = deviceEQSettings[group[0]] ?? .disabled
+                try child.activate(initial: state)
             }
             return created
         } catch {
@@ -111,22 +125,46 @@ final class OutputDelayTapController: ProcessTapControlling {
     func setDelayEnabled(_ newValue: Bool) async throws {
         try await serialize {
             guard self.enabled != newValue else { return }
-            // Prepare muted replacement routes first. A setup failure leaves the old route
-            // alive. Only the explicit mode toggle has a brief stop/start transition.
-            self.staged = try self.makeChildren(for: self.targets, enabled: newValue, muted: true)
-            let token = self.lifecycle
-            let old = self.children
-            for child in old { await child.invalidateAsync() }
-            guard self.active, token == self.lifecycle, !Task.isCancelled else {
-                for child in self.staged { child.invalidate() }
-                self.staged = []
-                throw CancellationError()
-            }
-            self.children = self.staged
-            self.staged = []
+            try await self.replaceChildren(for: self.targets, sourceUID: self.sourceUID,
+                                           enabled: newValue, deviceEQSettings: self.deviceEQSettings)
             self.enabled = newValue
-            for child in self.children { child.isMuted = self.isMuted }
         }
+    }
+
+    func setDeviceEQSettings(_ settings: [String: EQSettings]) async throws {
+        try await serialize {
+            let split = self.needsIndependentOutputs(for: self.targets, enabled: self.enabled, settings: settings)
+            if split != self.usesIndependentOutputs {
+                try await self.replaceChildren(for: self.targets, sourceUID: self.sourceUID,
+                                               enabled: self.enabled, deviceEQSettings: settings)
+            } else {
+                for child in self.children {
+                    let outputSettings = child.currentDeviceUID.flatMap { settings[$0] } ?? .disabled
+                    child.updateOutputEQSettings(outputSettings)
+                }
+            }
+            self.deviceEQSettings = settings
+        }
+    }
+
+    /// Prepare replacements before retiring the old routes so setup failures preserve playback.
+    private func replaceChildren(for uids: [String], sourceUID: String?, enabled: Bool,
+                                 deviceEQSettings: [String: EQSettings]) async throws {
+        let split = needsIndependentOutputs(for: uids, enabled: enabled, settings: deviceEQSettings)
+        staged = try makeChildren(for: uids, sourceUID: sourceUID, enabled: enabled, split: split,
+                                  deviceEQSettings: deviceEQSettings, muted: true)
+        let token = lifecycle
+        let old = children
+        for child in old { await child.invalidateAsync() }
+        guard active, token == lifecycle, !Task.isCancelled else {
+            for child in staged { child.invalidate() }
+            staged = []
+            throw CancellationError()
+        }
+        children = staged
+        staged = []
+        usesIndependentOutputs = split
+        for child in children { child.isMuted = isMuted }
     }
 
     func updateDevices(to requestedUIDs: [String], preferredTapSourceDeviceUID: String?, sourceDeviceDead: Bool) async throws {
@@ -135,8 +173,13 @@ final class OutputDelayTapController: ProcessTapControlling {
         let uids = requestedUIDs.filter { seen.insert($0).inserted }
         try await serialize {
             let token = self.lifecycle
-            if !self.enabled {
+            let split = self.needsIndependentOutputs(for: uids, enabled: self.enabled, settings: self.deviceEQSettings)
+            if split != self.usesIndependentOutputs {
+                try await self.replaceChildren(for: uids, sourceUID: preferredTapSourceDeviceUID,
+                                               enabled: self.enabled, deviceEQSettings: self.deviceEQSettings)
+            } else if !split {
                 try await self.children[0].updateDevices(to: uids, preferredTapSourceDeviceUID: preferredTapSourceDeviceUID, sourceDeviceDead: sourceDeviceDead)
+                self.children[0].updateOutputEQSettings(.disabled)
             } else {
                 // Keep unchanged outputs (and their delay histories) alive when adding or
                 // removing another output. New routes are committed only after all start.
@@ -150,7 +193,10 @@ final class OutputDelayTapController: ProcessTapControlling {
                 }
                 self.sourceUID = preferredTapSourceDeviceUID
                 let added: [any ProcessTapControlling]
-                do { added = try self.makeChildren(for: additions, enabled: true, muted: self.isMuted) }
+                do {
+                    added = try self.makeChildren(for: additions, sourceUID: self.sourceUID, enabled: self.enabled,
+                                                  split: true, deviceEQSettings: self.deviceEQSettings, muted: self.isMuted)
+                }
                 catch { self.sourceUID = previousSource; throw error }
                 let retained = self.children.filter { uids.contains($0.currentDeviceUID ?? "") }
                 let removed = self.children.filter { !uids.contains($0.currentDeviceUID ?? "") }

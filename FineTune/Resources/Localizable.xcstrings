@@ -1,6 +1,133 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Unmute master volume": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "取消总音量静音" } }
+      }
+    },
+    "Master Volume": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总音量"
+          }
+        }
+      }
+    },
+    "All apps managed by FineTune": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "统一调节 FineTune 接管的声音"
+          }
+        }
+      }
+    },
+    "Mute master volume": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总音量静音"
+          }
+        }
+      }
+    },
+    "Adjust all FineTune playback while keeping app and device levels unchanged": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "统一调节所有 FineTune 播放，保留应用和设备的音量比例"
+          }
+        }
+      }
+    },
+    "Use F11/F12 (or volume keys) to control FineTune master volume": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 F11/F12 或音量键调节 FineTune 总音量"
+          }
+        }
+      }
+    },
+    "Collapsed": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已折叠"
+          }
+        }
+      }
+    },
+    "Expanded": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已展开"
+          }
+        }
+      }
+    },
+    "Could not apply device EQ: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法应用设备均衡器：%@"
+          }
+        }
+      }
+    },
+    "Device EQ": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备均衡器"
+          }
+        }
+      }
+    },
+    "Applies to every app routed to this device. App EQ is also applied.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用于输出到此设备的所有应用，并与应用均衡器叠加。"
+          }
+        }
+      }
+    },
+    "Adjust EQ for this output device": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调整此输出设备的均衡器"
+          }
+        }
+      }
+    },
     "\"%@\" disconnected. %lld app(s) switched to %@": {
       "extractionState": "manual",
       "localizations": {

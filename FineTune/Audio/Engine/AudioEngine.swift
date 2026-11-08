@@ -25,6 +25,10 @@ final class AudioEngine {
     private let outputDelayRegistry: OutputDelayRegistry
     private(set) var isUpdatingOutputDelay = false
     private(set) var outputDelayError: String?
+    private(set) var deviceEQError: String?
+    private(set) var deviceEQUpdateTask: Task<Void, Never>?
+    private var deviceEQRevision = 0
+    private var appliedDeviceEQSettings: [String: EQSettings]
 
 
     /// Factory for creating tap controllers. Overridable for testing.
@@ -191,6 +195,7 @@ final class AudioEngine {
         let delayRegistry = OutputDelayRegistry(settings: manager)
         self.outputDelayRegistry = delayRegistry
         self.settingsManager = manager
+        self.appliedDeviceEQSettings = manager.deviceEQSettings
         self.appListCoordinator = AppListCoordinator(settingsManager: manager)
         self.autoEQProfileManager = autoEQProfileManager
         self.volumeState = VolumeState(settingsManager: manager)
@@ -233,14 +238,15 @@ final class AudioEngine {
         #endif
 
         // Default routes still use the original controller. Independent renderers are
-        // created only when the user explicitly enables output-delay compensation.
+        // created when output-delay compensation or device EQ needs separate processing.
         if let factory = tapFactory {
             self.tapFactory = factory
         } else {
             self.tapFactory = { app, deviceUIDs, preferredSource in
                 OutputDelayTapController(
                     app: app, targetDeviceUIDs: deviceUIDs, sourceUID: preferredSource,
-                    enabled: manager.outputDelayEnabled, registry: delayRegistry
+                    enabled: manager.outputDelayEnabled, registry: delayRegistry,
+                    deviceEQSettings: manager.deviceEQSettings
                 ) { targets, source, delay in
                     ProcessTapController(app: app, targetDeviceUIDs: targets,
                                          deviceMonitor: realDeviceMonitor,
@@ -611,6 +617,7 @@ final class AudioEngine {
     func handleSettingsReset() {
         // 1. Clear persisted state
         settingsManager.resetAllSettings()
+        scheduleDeviceEQUpdate()
 
         // 2. Clear in-memory routing and tracking state
         appliedPIDs.removeAll()
@@ -635,6 +642,39 @@ final class AudioEngine {
         applyPersistedSettings()
 
         logger.info("Settings reset: engine state synchronized")
+    }
+
+    // MARK: - Master Volume
+
+    var masterVolume: Float { settingsManager.masterVolume }
+    var isMasterMuted: Bool { settingsManager.masterMuted }
+    private var effectiveMasterGain: Float { isMasterMuted ? 0 : masterVolume }
+
+    /// A positive slider edit also unmutes. App/device settings remain independent.
+    func setMasterVolume(_ gain: Float) {
+        guard gain.isFinite else { return }
+        let gain = max(0, min(1, gain))
+        settingsManager.setMasterVolume(gain, muted: gain > 0 ? false : isMasterMuted)
+        refreshMasterGain()
+    }
+
+    func setMasterMuted(_ muted: Bool) {
+        settingsManager.setMasterVolume(masterVolume, muted: muted)
+        refreshMasterGain()
+    }
+
+    func toggleMasterMute() {
+        if masterVolume == 0 {
+            // Explicit unmute from zero restores a moderate level. Volume-up
+            // uses its normal step without briefly restoring this higher gain.
+            setMasterVolume(VolumeMapping.sliderToGain(0.5))
+        } else {
+            setMasterMuted(!isMasterMuted)
+        }
+    }
+
+    private func refreshMasterGain() {
+        for tap in taps.values { tap.masterGain = effectiveMasterGain }
     }
 
     func setVolume(for app: AudioApp, to volume: Float) {
@@ -697,6 +737,7 @@ final class AudioEngine {
 
     private func applyTapOutputState(to tap: any ProcessTapControlling, for pid: pid_t, deviceUIDs: [String]? = nil) {
         let resolvedUIDs = deviceUIDs ?? tap.currentDeviceUIDs
+        tap.masterGain = effectiveMasterGain
         tap.volume = effectiveVolume(for: pid, deviceUIDs: resolvedUIDs)
         tap.isMuted = volumeState.getMute(for: pid)
 
@@ -755,6 +796,49 @@ final class AudioEngine {
     /// Get EQ settings for an app
     func getEQSettings(for app: AudioApp) -> EQSettings {
         return settingsManager.getEQSettings(for: app.persistenceIdentifier)
+    }
+
+    func getDeviceEQSettings(for uid: String) -> EQSettings {
+        settingsManager.getDeviceEQSettings(for: uid)
+    }
+
+    func setDeviceEQSettings(_ settings: EQSettings, for uid: String) {
+        settingsManager.setDeviceEQSettings(settings, for: uid)
+        scheduleDeviceEQUpdate()
+    }
+
+    /// Coalesce slider edits and serialize route changes, including edits to different devices.
+    private func scheduleDeviceEQUpdate() {
+        deviceEQRevision += 1
+        let revision = deviceEQRevision
+        let previous = deviceEQUpdateTask
+        deviceEQError = nil
+        deviceEQUpdateTask = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self, revision == self.deviceEQRevision else { return }
+            let requested = self.settingsManager.deviceEQSettings
+            let saved = self.appliedDeviceEQSettings
+            do {
+                for (pid, tap) in Array(self.taps) {
+                    guard let output = tap as? OutputDelayTapController else { continue }
+                    do { try await output.setDeviceEQSettings(requested) }
+                    catch {
+                        if let current = self.taps[pid], current === tap { throw error }
+                    }
+                }
+                self.appliedDeviceEQSettings = requested
+            } catch {
+                for tap in Array(self.taps.values) {
+                    guard let output = tap as? OutputDelayTapController else { continue }
+                    do { try await output.setDeviceEQSettings(saved) }
+                    catch { self.logger.error("Device EQ rollback failed: \(error.localizedDescription)") }
+                }
+                if revision == self.deviceEQRevision {
+                    self.settingsManager.deviceEQSettings = saved
+                    self.deviceEQError = L10n.format("Could not apply device EQ: %@", error.localizedDescription)
+                }
+            }
+        }
     }
 
     // MARK: - Per-Device AutoEQ

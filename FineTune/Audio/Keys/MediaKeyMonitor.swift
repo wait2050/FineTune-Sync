@@ -19,7 +19,7 @@ protocol MediaKeyIconFlashing: AnyObject {
 }
 
 /// Intercepts F10/F11/F12 via a `CGEventTap`, swallows them so the native HUD
-/// does not double-fire, and drives the default output device.
+/// does not double-fire, and drives FineTune's master volume.
 @MainActor
 final class MediaKeyMonitor {
     // MARK: - Collaborators
@@ -221,25 +221,30 @@ final class MediaKeyMonitor {
 
     // MARK: - Event handling
 
-    /// Applies a decoded `MediaKeyEvent` to the default output device.
+    /// Media keys always control FineTune's shared master, independent of the
+    /// current default output and of how many outputs each app is routed to.
     func handle(_ event: MediaKeyEvent, shiftHeld: Bool = false, optionHeld: Bool = false) {
-        let volumeMonitor = audioEngine.deviceVolumeMonitor
-        let deviceID = volumeMonitor.defaultDeviceID
-        guard deviceID.isValid else {
-            logger.debug("Ignoring media key: no valid default output device")
+        if event == .muteToggle {
+            audioEngine.toggleMasterMute()
+            if !popupVisibility.isVisible {
+                hudController.show(
+                    sliderFraction: VolumeMapping.gainToSlider(audioEngine.masterVolume),
+                    mute: audioEngine.isMasterMuted,
+                    deviceName: L10n.string("Master Volume")
+                )
+            }
+            iconCoordinator?.flashDevice()
             return
         }
-        let tier = volumeMonitor.outputVolumeBackend(for: deviceID)
-        let deviceName = audioEngine.deviceMonitor.outputDevices.first { $0.id == deviceID }?.name ?? ""
         handleCore(
             event: event,
-            deviceID: deviceID,
-            tier: tier,
-            deviceName: deviceName,
-            currentVolume: volumeMonitor.volumes[deviceID] ?? 0,
-            currentMute: volumeMonitor.muteStates[deviceID] ?? false,
-            setVolume: { id, vol in volumeMonitor.setVolume(for: id, to: vol) },
-            setMute:   { id, mute in volumeMonitor.setMute(for: id, to: mute) },
+            deviceID: .unknown,
+            tier: .software,
+            deviceName: L10n.string("Master Volume"),
+            currentVolume: audioEngine.masterVolume,
+            currentMute: audioEngine.isMasterMuted || audioEngine.masterVolume == 0,
+            setVolume: { _, gain in self.audioEngine.setMasterVolume(gain) },
+            setMute: { _, muted in self.audioEngine.setMasterMuted(muted) },
             playFeedback: { gain in
                 self.feedbackPlayer?.requestFeedback(
                     gain: gain,

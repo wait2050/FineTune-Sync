@@ -1,141 +1,84 @@
-> **中文延迟增强版 / Chinese delay edition**
-> 本公开 Fork 保留官方功能，增加独立设备延迟、±10/±50 ms 与键盘微调、简体中文界面，以及[延迟测试与麦克风自动校准](CALIBRATION.zh-CN.md)。
-> [下载定制版](https://github.com/wait2050/FineTune/releases/latest) · [使用说明](OUTPUT_DELAY.zh-CN.md) · [如何同步官方更新](UPSTREAM_SYNC.zh-CN.md)
-> 请安装本 Fork 的发布包；官方安装包不包含这些定制功能。下方保留官方项目说明及署名。
+<img src="assets/icon.png" width="96" height="96" alt="FineTune Sync" align="left"/>
 
-<img src="assets/icon.png" width="170" height="170" alt="FineTune 应用图标" align="left"/>
+# FineTune Sync
 
-<h3>FineTune</h3>
+**多台音箱一起放，声音对齐、音量一起调，每台还能单独调音色。**
 
-为每一个 App 单独控制音量、把过轻的声音最高放大 4 倍、把音频路由到不同的扬声器，再用 EQ 和耳机曲线把声音调到自己喜欢的样子。常驻菜单栏，免费且开源。
-
-<a href="https://github.com/ronitsingh10/FineTune/releases/latest/download/FineTune.dmg"><img src="assets/download-badge.svg" alt="下载 macOS 版本" height="48"/></a>
+Mac 内置扬声器、蓝牙音箱、USB 声卡和低音炮，接上了，也该配合得好。FineTune Sync 把多设备播放时最常用的三件事放在一起：**对齐延迟、统一音量、分设备 EQ**。常驻 macOS 菜单栏，免费、开源，支持简体中文。
 
 <br clear="all"/>
 
-简体中文控件预览（测试样例数值，不代表正在使用的设备设置）：
+**[下载最新版](https://github.com/wait2050/FineTune-Sync/releases/latest)** · [English](README.en.md) · [使用说明](OUTPUT_DELAY.zh-CN.md) · [同步测试与自动校准](CALIBRATION.zh-CN.md)
 
-![独立延迟和微调控件](assets/chinese-delay-controls.png)
+## 这一版有什么不同？
 
-<p align="center">
-  <a href="https://github.com/ronitsingh10/FineTune/releases/latest"><img src="https://img.shields.io/github/v/release/ronitsingh10/FineTune?style=for-the-badge&labelColor=1c1c1e&color=0A84FF&logo=github&logoColor=white" alt="最新版本"></a>
-  <a href="https://github.com/ronitsingh10/FineTune/releases"><img src="https://img.shields.io/github/downloads/ronitsingh10/FineTune/total?style=for-the-badge&labelColor=1c1c1e&color=3a3a3c" alt="下载量"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-3a3a3c?style=for-the-badge&labelColor=1c1c1e" alt="许可证：GPL v3"></a>
-  <a href="https://ko-fi.com/ronitsingh10"><img src="https://img.shields.io/badge/Tip_on_Ko--fi-FF5E5B?style=for-the-badge&labelColor=1c1c1e&logo=ko-fi&logoColor=white" alt="在 Ko-fi 打赏"></a>
-  <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-15%2B-3a3a3c?style=for-the-badge&labelColor=1c1c1e&logo=apple&logoColor=white" alt="macOS 15+"></a>
-</p>
+基于 [FineTune](https://github.com/ronitsingh10/FineTune) 扩展，重点照顾「几台设备一起听」这件事。原版的应用音量、音频路由和耳机校正等功能也都保留。
 
-<p align="center">
-  <a href="README.md">English</a> · <strong>简体中文</strong>
-</p>
+| 你遇到的情况 | FineTune Sync 怎么帮你 |
+| --- | --- |
+| 蓝牙音箱晚半拍，和内置扬声器一起放像有回声 | **延迟对齐**：给先出声的设备补一点延迟；每台单独调，也可以用麦克风测量后应用补偿。 |
+| 两台音箱的比例刚调好，想把整体声音小一点 | **统一总音量**：拖一个滑块，或按音量键，所有经过 FineTune 的播放一起变；各设备和应用原来的比例保留。 |
+| 一台音箱发闷，另一台低频太重 | **每台设备独立 EQ**：分别调音色。同一首歌可以给不同音箱使用不同曲线，也能继续叠加应用 EQ。 |
 
-> 本翻译由社区维护，更新可能晚于英文版。最新内容请以 [English README](README.md) 为准。
-> *This translation is community-maintained and may lag the English version. See the [English README](README.md) for the most current information.*
+### 先让鼓点落在一起
 
-<p align="center">
-  <img src="assets/screenshot-main.png" alt="FineTune 弹窗：按 App 控制音量、多设备输出路由（含设备选择浮窗）、AutoEQ 耳机校正以及设备级音量滑块" width="700">
-</p>
-<p align="center">
-  <img src="assets/screenshot-eq.png" alt="FineTune：Brave 浏览器一行展开，EQ 面板打开，已选中「Vocal Clarity」预设" width="700">
-</p>
+在「设置 → 音频 → 多设备声音同步」中打开延迟补偿，给每台输出单独设置 **0–2000 ms** 延迟。支持数字输入、±10 / ±50 ms 按钮和键盘微调，也有同步测试音，方便边听边调。
 
-## 安装
+如果你有能同时听见两台音箱的有线或 USB 麦克风，可以测量它们的时间差，再应用补偿。比如蓝牙音箱慢了约 220 ms，就让内置扬声器多等 220 ms；这只是说明调法，实际数值要按你的设备测量。
 
-**Homebrew**（推荐）
+![简体中文延迟补偿控件](assets/chinese-delay-controls.png)
 
-```bash
-brew install --cask finetune
-```
+### 调好比例，之后只管总音量
 
-**手动安装** —— [下载最新版本](https://github.com/ronitsingh10/FineTune/releases/latest)
+输出页顶部新增「总音量」。无论一个应用发往两台音箱，还是多个应用分配到不同设备，都能整体调大、调小或静音。媒体键和浮层滑块控制同一个总音量；新播放流和切换后的输出会继承当前设置。
 
-## 快速上手
+总音量作用于 FineTune 接管的声音，被忽略或未接管的应用不受影响。100% 保留原有电平，往下调时统一衰减；应用和设备的滑块仍然用于各自的平衡。
 
-1. 安装 FineTune，从「应用程序」文件夹中启动
-2. 在系统弹出权限请求时，授予 **屏幕与系统音频录制** 权限
-3. 点击菜单栏中的 FineTune 图标，正在播放音频的 App 会自动出现
+![总音量与各设备音量](assets/sync-master-volume.png)
 
-就是这样。直接拖动滑块、切换音频路由，或在菜单栏里玩一下 EQ 即可。
+### 每只音箱，都有自己的调法
 
-> **小贴士：** 想让 FineTune 在某台设备接入时自动切换过去？打开编辑模式（铅笔图标），把它拖到内置扬声器上方即可。这是一次性设置，你的偏好顺序会被永久保存。
+点输出设备旁的 EQ 按钮，展开这台设备的 **10 段均衡器**。想少一点轰头的低频，或把人声调清楚，都可以只改这一台；曲线和开关会分别保存。
 
-## 功能
+设备 EQ 会作用于送往该设备的所有应用，可与应用 EQ、AutoEQ 耳机校正一起使用。不同设备使用不同 EQ 时，各输出会独立处理声音。
 
-### 🎚 音量控制
-- **按 App 控制音量** —— 为每个应用提供独立的音量滑块和静音
-- **按 App 增益** —— 提供 2x / 3x / 4x 三档增益预设
-- **置顶 App** —— 即使应用没有在播放声音，也让它一直显示在菜单栏中，方便提前配置音量、EQ 和路由
-- **忽略 App** —— 让 FineTune 完全脱离指定的应用，撤掉对应的音频接入点，让该应用回到 macOS 默认的音频通路
-- **滚轮调节音量** —— 把鼠标悬停到弹窗、HUD 或 EQ 面板的任一滑块上，滚动滚轮即可调节
+![输出设备独立均衡器](assets/sync-device-eq.png)
 
-### ⌨️ 键盘
-- **全局音量快捷键** —— 在 设置 → 快捷键 中，给 **App Volume Up**、**App Volume Down** 与 **App Mute** 自定义按键。这里的「App」指的是当前在发声的应用，所以当 YouTube 标签页在后台播放、终端在前台时，按下音量减只会调小 YouTube，不会动到终端。如果当前没有任何声音，快捷键会回退到最前台的应用
-- **从任何地方唤起弹窗** —— 给 **Toggle FineTune Popup** 绑定一个快捷键，菜单栏弹窗就能随时开关，即便在全屏应用中也可以
-- **可调节的步长** —— 在 设置 → 快捷键 → Volume Step 里选择 **Coarse / Normal / Fine / Extra-Fine**。这一项同时控制 F10–F12 媒体键、全局快捷键，以及弹窗里的方向键导航
-- **长按连续调节、调高时自动取消静音** —— 长按 App Volume Up 或 Down 会像 macOS 的方向键一样持续触发；当处于静音状态按音量加，会一次性取消静音并设置到新音量
-- **键盘操作弹窗** —— 弹窗打开后，**↑ / ↓** 在行间移动，**← / →** 调节当前焦点行的音量（按住 Shift = 2 倍步长），**M** 切换静音，**Return / Space** 触发，**Tab** 在「输出」与「输入」设备标签间切换，**Esc** 关闭。焦点行会自动滚动到中央
+*上面的界面图使用测试样例数值展示控件，不代表设备实测结果。*
 
-### 🔀 音频路由
-- **多设备输出** —— 同时将音频送往多台设备
-- **音频路由** —— 把不同 App 分发到不同输出，或随系统默认输出走
-- **设备优先级** —— 当新设备接入时，自定义 FineTune 切换的目标；当设备断开时，自动回退
-- **自动恢复** —— 设备重新接入后，相关 App 会自动回到这台设备，并保留原本的音量、路由与 EQ 设置
+## 下载与上手
 
-### 🎛 EQ 与校正
-- **10 段均衡器** —— 内置 5 大类、共 20 个预设
-- **自定义 EQ 预设** —— 可按 App 保存、重命名和管理你自己的 EQ 配置
-- **AutoEQ 耳机校正** —— 在数千条耳机曲线中搜索，或直接导入自己的 ParametricEQ.txt 文件，为每台设备进行频响校正
-- **响度补偿** —— 在低音量下，依据 ISO 226:2023 等响度曲线自动补偿低频和高频，并实时管理整体电平，让感知响度保持一致
+支持 **Apple Silicon Mac（arm64）、macOS 15.4 或更新版本**。
 
-### 🖥 设备与系统
-- **输入设备控制** —— 监控并调节麦克风电平
-- **提示音音量** —— 在设置中控制 macOS 通知与提示音的音量
-- **智能音量后端** —— FineTune 会按设备自动选择硬件、DDC 或软件音量。如果某台 USB DAC 或 HDMI 输出的硬件滑块根本不起作用，可以在设备详情里强制使用软件音量，FineTune 会记住这台设备的选择
-- **设备详情** —— 点击任一设备旁的信息按钮，可以看到采样率（含选择器）、连接方式、UID 复制、独占模式提示，以及软件音量覆盖开关
-- **隐藏设备** —— 在编辑模式下用「眼睛」按钮把不想出现在列表里的输出或输入设备隐藏起来，逻辑与隐藏 App 一致
-- **蓝牙设备管理** —— 直接从菜单栏连接已配对的设备
-- **显示器扬声器控制** —— 通过 DDC 调节外接显示器的音量
-- **媒体按键与音量提示** —— 可选地接管 F10–F12 来控制默认输出设备，并在屏幕上显示 Tahoe 风格或经典风格的音量提示。所有写入都会走 FineTune 的音量管线，因此即使在 macOS 自身因为硬件滑块不可用而把媒体键灰掉的 USB 接口或 HDMI 输出上，按键依然有效
-- **动态菜单栏图标** —— 在「设置」中可选择四种风格（Default、Speaker、Waveform、Equalizer）。其中 **Speaker** 风格会随音量实时切换图标（零 / 低 / 中 / 高），静音时显示带斜线的扬声器；切换设备时，所有风格都会短暂闪现新输出对应的 SF Symbol。切换风格立即生效，无需重启
-- **菜单栏应用** —— 轻量、随时可用
-- **URL Scheme** —— 通过脚本自动化控制音量、静音、设备路由等
+1. 从 [本仓库 Releases](https://github.com/wait2050/FineTune-Sync/releases/latest) 下载 ZIP，解压后把应用放入「应用程序」。已有用户先退出旧版，再替换应用；原设置会保留。安装包中的应用沿用 `FineTune Delay.app` 文件名。
+2. 启动后按系统提示授予音频录制权限。需要用 F10 / F11 / F12 接管音量时，再授予辅助功能权限。
+3. 点击菜单栏图标，在应用的输出选择器里选中多台设备。
+4. 先对齐延迟，再调整每台的音量和 EQ；之后用顶部总音量控制整体。
 
-### 🎨 外观
-- **浅色或深色主题** —— 设置 → 通用 → 主题 跟随 macOS，或将 FineTune 锁定为浅色 / 深色。菜单栏弹窗、所有浮窗以及音量提示会立即切换
-- **弹窗密度** —— 设置 → 通用 → Popup Size 选择 **Compact / Comfortable / Spacious**，并提供实时预览。Compact 在小屏幕上能容纳更多 App；Spacious 给触控板用户更大的点击区域
+本仓库的发布包包含上述扩展；Homebrew 的 `finetune` 和官方安装包对应上游原版。请一次只运行一个版本。本发布包使用本地签名，未经 Apple 公证，首次打开可能需要按 macOS 提示确认。
 
-## 文档
+蓝牙重连、切换音频模式或改变摆位后，可能需要重新测量。这里的同步通过测量和延迟补偿实现，目前不会持续追踪蓝牙延迟变化。
 
-- **[AutoEQ 与耳机校正](guide/autoeq.zh-CN.md)** —— 应用来自 [AutoEQ](https://github.com/jaakkopasanen/AutoEq) 项目的频响校正、导入 [EqualizerAPO](https://sourceforge.net/projects/equalizerapo/) 配置，或浏览 [autoeq.app](https://www.autoeq.app/)
-- **[URL Scheme](guide/url-schemes.md)** —— 通过终端、[快捷指令](https://support.apple.com/guide/shortcuts-mac)、[Raycast](https://raycast.com) 或脚本自动化 FineTune
-- **[排查指引](guide/troubleshooting.md)** —— 权限问题、应用未出现、声音异常等
+## 还有这些熟悉的功能
 
-## 参与贡献
+- 每个应用独立音量、静音和最高 4 倍增益。
+- 同时输出到多个设备，或把不同应用送往不同设备。
+- 应用 EQ、自定义预设、AutoEQ 耳机校正和响度处理。
+- 设备优先级、断线回退、蓝牙设备管理和麦克风音量控制。
+- 快捷键、滚轮调节、浅色 / 深色外观和简体中文界面。
 
-- **给本仓库点 Star** —— 帮助更多人发现 FineTune
-- **报告 Bug** —— [新建 issue](https://github.com/ronitsingh10/FineTune/issues)
-- **贡献代码** —— 见 [CONTRIBUTING.md](CONTRIBUTING.md)
+## 文档与反馈
 
-### 从源码构建
+- [完整使用说明](OUTPUT_DELAY.zh-CN.md)
+- [同步测试音与麦克风自动校准](CALIBRATION.zh-CN.md)
+- [如何跟进官方更新](UPSTREAM_SYNC.zh-CN.md)
+- [构建与实现说明](OUTPUT_DELAY.md)
+- [报告问题或提出建议](https://github.com/wait2050/FineTune-Sync/issues)
 
-```bash
-git clone https://github.com/ronitsingh10/FineTune.git
-cd FineTune
-open FineTune.xcodeproj
-```
+遇到问题时，告诉我们你的 Mac、macOS 版本、输出设备，以及「怎么操作、听到了什么」。这些比一句“不同步”更容易帮我们找到原因。
 
-## 系统要求
+## 开源与致谢
 
-- macOS 15.0 (Sequoia) 或更高版本
-- 音频采集权限（首次启动时弹出请求）
+FineTune Sync 是 [Ronit Singh 的 FineTune](https://github.com/ronitsingh10/FineTune) 的社区扩展版，保留原作者署名与 [GPL-3.0 许可证](LICENSE)。感谢上游提供应用音量、路由和音频处理的基础，也感谢 [AutoEQ](https://github.com/jaakkopasanen/AutoEq) 的耳机校正资料。
 
-## 支持作者
-
-FineTune 永远免费且开源。如果它让你的一天稍微轻松了一点，可以请作者喝杯咖啡 —— 但完全不必勉强 🙏
-
-[![请我喝咖啡](https://img.shields.io/badge/Buy_me_a_coffee-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/ronitsingh10)
-
-
-## 许可证
-
-[GPL v3](LICENSE)
+喜欢原版 FineTune，也可以 [支持原作者](https://ko-fi.com/ronitsingh10)。本仓库负责这里的多设备同步、总音量、设备 EQ 与中文扩展。

@@ -72,6 +72,7 @@ struct MenuBarPopupView: View {
     /// Device whose inline detail panel is expanded in edit mode (nil when
     /// collapsed). Mirrors the `expandedRowID` pattern used for per-app EQ.
     @State private var expandedDeviceUID: String?
+    @State private var expandedDeviceEQUID: String?
 
     /// Hover state for support link heart animation
     @State private var isSupportHovered = false
@@ -241,15 +242,11 @@ struct MenuBarPopupView: View {
         .onKeyPress(phases: [.down, .repeat]) { keyPress in
             handleKeyPress(keyPress)
         }
+        .onExitCommand { handleEscape() }
         .environment(textEntry)
         .onChange(of: textEntry.navRestoreNonce) { _, _ in
             // A mouse-driven field edit ended; reclaim nav focus so arrows/Return work.
             anchorFocused = true
-        }
-        .background {
-            Button("") { handleEscape() }
-                .keyboardShortcut(.escape, modifiers: [])
-                .hidden()
         }
     }
 
@@ -299,8 +296,7 @@ struct MenuBarPopupView: View {
     /// `isEditingDevicePriority` so Escape collapses the row first rather than
     /// tearing down edit mode entirely.
     private func handleEscape() {
-        // The hidden Escape keyboardShortcut button can win over `.onKeyPress`, so an
-        // in-progress keyboard entry is cancelled here too.
+        // Exit commands also cancel keyboard percentage entry before dismissing.
         if textEntry.buffer != nil {
             textEntry.buffer = nil
             return
@@ -334,6 +330,17 @@ struct MenuBarPopupView: View {
     private func mainContent(scrollProxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             // Devices section (tabbed: Output / Input)
+            if !showingInputDevices && !isEditingDevicePriority {
+                MasterVolumeRow(
+                    volume: audioEngine.masterVolume,
+                    isMuted: audioEngine.isMasterMuted,
+                    isFocused: hasKeyboardEngaged && selectedRow == .master,
+                    onVolumeChange: { audioEngine.setMasterVolume($0) },
+                    onMuteToggle: { audioEngine.toggleMasterMute() }
+                )
+                .id(PopupKeyboardNavModel.RowID.master)
+                Divider()
+            }
             devicesSection
 
             Divider()
@@ -619,7 +626,26 @@ struct MenuBarPopupView: View {
                             audioEngine.setAutoEQPreampEnabled(!audioEngine.autoEQPreampEnabled)
                         },
                         isFocused: hasKeyboardEngaged && selectedRow == .device(uid: device.uid),
-                        iconOverrideSymbol: audioEngine.settingsManager.getDeviceIconOverride(for: device.uid)
+                        iconOverrideSymbol: audioEngine.settingsManager.getDeviceIconOverride(for: device.uid),
+                        eqSettings: audioEngine.getDeviceEQSettings(for: device.uid),
+                        isEQExpanded: expandedDeviceEQUID == device.uid,
+                        onEQToggle: {
+                            expandedDeviceEQUID = expandedDeviceEQUID == device.uid ? nil : device.uid
+                        },
+                        userPresets: audioEngine.settingsManager.getUserPresets(),
+                        eqError: audioEngine.deviceEQError,
+                        onEQChange: { settings in
+                            audioEngine.setDeviceEQSettings(settings, for: device.uid)
+                        },
+                        onSavePreset: { name, settings in
+                            audioEngine.settingsManager.createUserPreset(name: name, settings: settings)
+                        },
+                        onDeleteUserPreset: { id in
+                            audioEngine.settingsManager.deleteUserPreset(id: id)
+                        },
+                        onRenameUserPreset: { id, name in
+                            audioEngine.settingsManager.updateUserPreset(id: id, name: name)
+                        }
                     )
                     .id(PopupKeyboardNavModel.RowID.device(uid: device.uid))
                 }
@@ -1197,7 +1223,8 @@ struct MenuBarPopupView: View {
         navModel.syncOrder(
             activeDevices: activeDevices,
             appPersistenceIDs: audioEngine.displayableApps.map(\.id),
-            isEditingPriority: isEditingDevicePriority
+            isEditingPriority: isEditingDevicePriority,
+            includeMaster: !showingInputDevices
         )
     }
 
@@ -1261,9 +1288,13 @@ struct MenuBarPopupView: View {
         case .return, .space:
             return activate(target)
         case .tab:
-            guard case .device = target else { return .ignored }
-            toggleDeviceTab()
-            return .handled
+            switch target {
+            case .device, .master:
+                toggleDeviceTab()
+                return .handled
+            default:
+                return .ignored
+            }
         default:
             if let editSeed, keyPress.phase == .down, target != nil {
                 textEntry.buffer = editSeed
@@ -1315,6 +1346,10 @@ struct MenuBarPopupView: View {
         let step = shift ? baseStep * 2.0 : baseStep
         let delta = step * Double(direction)
         switch target {
+        case .master:
+            let slider = VolumeMapping.gainToSlider(audioEngine.masterVolume)
+            audioEngine.setMasterVolume(VolumeMapping.sliderToGain(max(0, min(1, slider + delta))))
+            return .handled
         case .app(let persistenceID):
             if let app = audioEngine.apps.first(where: { $0.persistenceIdentifier == persistenceID }) {
                 applyAppVolumeStep(
@@ -1383,6 +1418,9 @@ struct MenuBarPopupView: View {
     private func toggleMute(for target: PopupKeyboardNavModel.RowID?) -> KeyPress.Result {
         guard let target else { return .ignored }
         switch target {
+        case .master:
+            audioEngine.toggleMasterMute()
+            return .handled
         case .app(let persistenceID):
             if let app = audioEngine.apps.first(where: { $0.persistenceIdentifier == persistenceID }) {
                 audioEngine.toggleMute(for: app)
@@ -1412,6 +1450,9 @@ struct MenuBarPopupView: View {
     private func activate(_ target: PopupKeyboardNavModel.RowID?) -> KeyPress.Result {
         guard let target else { return .ignored }
         switch target {
+        case .master:
+            audioEngine.toggleMasterMute()
+            return .handled
         case .device(let uid):
             if showingInputDevices {
                 guard let device = sortedInputDevices.first(where: { $0.uid == uid }) else {

@@ -43,8 +43,18 @@ struct DeviceRow: View {
     let onAutoEQPreampToggle: (() -> Void)?
     let isFocused: Bool
     let iconOverrideSymbol: String?
+    let eqSettings: EQSettings
+    let isEQExpanded: Bool
+    let onEQToggle: () -> Void
+    let userPresets: [UserEQPreset]
+    let eqError: String?
+    let onEQChange: ((EQSettings) -> Void)?
+    let onSavePreset: (String, EQSettings) -> Void
+    let onDeleteUserPreset: (UUID) -> Void
+    let onRenameUserPreset: (UUID, String) -> Void
 
     @State private var sliderValue: Double
+    @State private var localEQSettings: EQSettings
     @State private var isEditing = false
     @State private var suppressSliderAutoUnmute = false
     /// Suppresses write-back when slider is being synced from a device volume change.
@@ -94,7 +104,16 @@ struct DeviceRow: View {
         autoEQPreampEnabled: Bool = true,
         onAutoEQPreampToggle: (() -> Void)? = nil,
         isFocused: Bool = false,
-        iconOverrideSymbol: String? = nil
+        iconOverrideSymbol: String? = nil,
+        eqSettings: EQSettings = .disabled,
+        isEQExpanded: Bool = false,
+        onEQToggle: @escaping () -> Void = {},
+        userPresets: [UserEQPreset] = [],
+        eqError: String? = nil,
+        onEQChange: ((EQSettings) -> Void)? = nil,
+        onSavePreset: @escaping (String, EQSettings) -> Void = { _, _ in },
+        onDeleteUserPreset: @escaping (UUID) -> Void = { _ in },
+        onRenameUserPreset: @escaping (UUID, String) -> Void = { _, _ in }
     ) {
         self.device = device
         self.isDefault = isDefault
@@ -118,23 +137,64 @@ struct DeviceRow: View {
         self.onAutoEQPreampToggle = onAutoEQPreampToggle
         self.isFocused = isFocused
         self.iconOverrideSymbol = iconOverrideSymbol
+        self.eqSettings = eqSettings
+        self.isEQExpanded = isEQExpanded
+        self.onEQToggle = onEQToggle
+        self.userPresets = userPresets
+        self.eqError = eqError
+        self.onEQChange = onEQChange
+        self.onSavePreset = onSavePreset
+        self.onDeleteUserPreset = onDeleteUserPreset
+        self.onRenameUserPreset = onRenameUserPreset
+        self._localEQSettings = State(initialValue: eqSettings)
         self._sliderValue = State(initialValue: Self.volumeToSlider(volume, backend: volumeBackend))
     }
 
     var body: some View {
-        deviceHeader
-            .contentShape(Rectangle())
-            .onTapGesture {
-                // Whole-row tap sets this device as default. Inner controls
-                // (volume slider, mute button, AutoEQ picker, percent field)
-                // are Button/Slider/TextField subviews that capture their
-                // own gestures, so they do not propagate to this handler.
-                // Mirrors the macOS Sound submenu pattern.
-                if !isDefault {
-                    onSetDefault()
+        VStack(spacing: 0) {
+            deviceHeader
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    // Inner controls handle their own gestures.
+                    if !isDefault { onSetDefault() }
                 }
+                .hoverableRow(isFocused: isFocused)
+
+            if isEQExpanded, let onEQChange {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                    Text("Applies to every app routed to this device. App EQ is also applied.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(DesignTokens.Colors.textSecondary)
+                    EQPanelView(
+                        settings: $localEQSettings,
+                        userPresets: userPresets,
+                        onPresetSelected: { preset in
+                            localEQSettings = preset.settings
+                            onEQChange(preset.settings)
+                        },
+                        onUserPresetSelected: { preset in
+                            localEQSettings = preset.settings
+                            onEQChange(preset.settings)
+                        },
+                        onSettingsChanged: onEQChange,
+                        onSavePreset: onSavePreset,
+                        onDeleteUserPreset: onDeleteUserPreset,
+                        onRenameUserPreset: onRenameUserPreset
+                    )
+                    if let eqError {
+                        Text(eqError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+                .padding(.horizontal, DesignTokens.Spacing.sm)
+                .padding(.bottom, DesignTokens.Spacing.sm)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .hoverableRow(isFocused: isFocused)
+        }
+        .onChange(of: eqSettings) { _, settings in
+            localEQSettings = settings
+        }
     }
 
     // MARK: - Device Header
@@ -164,6 +224,25 @@ struct DeviceRow: View {
                 }
 
                 Spacer(minLength: 0)
+
+                if onEQChange != nil {
+                    Button {
+                        withAnimation(DesignTokens.Animation.quick) {
+                            onEQToggle()
+                        }
+                    } label: {
+                        Image(systemName: isEQExpanded ? "xmark" : "slider.vertical.3")
+                            .font(.system(size: 12))
+                            .foregroundStyle(isEQExpanded || eqSettings.isEnabled
+                                             ? DesignTokens.Colors.interactiveActive
+                                             : DesignTokens.Colors.interactiveDefault)
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Adjust EQ for this output device")
+                    .accessibilityLabel("Device EQ")
+                    .accessibilityValue(isEQExpanded ? Text("Expanded") : Text("Collapsed"))
+                }
 
                 // AutoEQ picker inside the name area so slider length stays consistent
                 if device.supportsAutoEQ,

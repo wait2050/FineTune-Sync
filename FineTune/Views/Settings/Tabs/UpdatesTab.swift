@@ -30,7 +30,7 @@ struct UpdatesTab: View {
                         .font(.callout).foregroundStyle(.secondary)
                     Text("Official source updates are prepared as pull requests in this fork. Install builds from your custom releases to keep Chinese UI and output delay controls.")
                         .font(.callout).foregroundStyle(.secondary)
-                    Link("View custom releases", destination: URL(string: "https://github.com/wait2050/FineTune/releases")!)
+                    Link("View custom releases", destination: URL(string: "https://github.com/wait2050/FineTune-Sync/releases")!)
                 }
                 SettingsSection("Software Updates") {
                     SettingsRow(

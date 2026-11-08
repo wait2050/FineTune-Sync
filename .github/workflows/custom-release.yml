@@ -1,4 +1,4 @@
-name: Release Chinese delay edition
+name: Release FineTune Sync
 
 on:
   push:
@@ -39,7 +39,11 @@ jobs:
         run: |
           case "$RELEASE_TAG" in cn-v*) ;; *) echo 'Expected a cn-v custom tag'; exit 1 ;; esac
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          FineTune 中文延迟增强版：独立设备延迟、±10/±50 ms 按钮及数字方向键调节。
+          FineTune Sync：多台音箱一起放，声音对齐、音量一起调，每台还能单独调音色。
+
+          - 延迟对齐：每台输出独立补偿，配合同步测试音、麦克风校准和手动微调。
+          - 统一总音量：一个滑块或媒体键控制 FineTune 接管的播放，保留原有音量比例。
+          - 每台设备独立 EQ：分别保存 10 段曲线，可与应用 EQ 和 AutoEQ 叠加。
 
           此安装包由当前标签的源码构建，已通过单元测试、本地化检查和包完整性检查。
           请先退出官方 FineTune，再运行本版本；定制版使用独立配置目录。
@@ -50,6 +54,6 @@ jobs:
             gh release upload "$RELEASE_TAG" release/FineTune-Delay-macOS.zip --clobber
           else
             gh release create "$RELEASE_TAG" release/FineTune-Delay-macOS.zip \
-              --verify-tag --title "FineTune 中文延迟增强版 $RELEASE_TAG" \
+              --verify-tag --title "FineTune Sync $RELEASE_TAG" \
               --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
