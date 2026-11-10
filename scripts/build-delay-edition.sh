@@ -28,6 +28,13 @@ fi
 
 ditto "$PROJECT_DIR/build/DelayDerivedData/Build/Products/Release/FineTune.app" \
       "$PROJECT_DIR/build/FineTune Delay.app"
+RESOURCE_DIR="$PROJECT_DIR/build/FineTune Delay.app/Contents/Resources"
+cp "$PROJECT_DIR/LICENSE" "$RESOURCE_DIR/"
+cp "$PROJECT_DIR/THIRD_PARTY_NOTICES.md" "$RESOURCE_DIR/"
+cp "$PROJECT_DIR/FineTune/Audio/MonoSplit/LICENSE-PCM" "$RESOURCE_DIR/"
+ditto "$PROJECT_DIR/third-party-licenses" "$RESOURCE_DIR/third-party-licenses"
+codesign --force --sign - "$PROJECT_DIR/build/FineTune Delay.app"
+codesign --verify --deep --strict "$PROJECT_DIR/build/FineTune Delay.app"
 printf '\nBuilt: %s\n' "$PROJECT_DIR/build/FineTune Delay.app"
 ditto -c -k --sequesterRsrc --keepParent "$PROJECT_DIR/build/FineTune Delay.app" \
       "$PROJECT_DIR/build/FineTune-Delay-macOS.zip"

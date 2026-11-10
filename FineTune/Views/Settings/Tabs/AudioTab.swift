@@ -96,7 +96,7 @@ struct AudioTab: View {
                 description: "Where alerts and effects play"
             ) {
                 SystemSoundsDevicePicker(
-                    devices: sortedOutputDevices,
+                    devices: sortedOutputDevices.filter { $0.uid != MonoSplitEndpoint.uid },
                     deviceIconOverrides: audioEngine.settingsManager.deviceIconOverrides,
                     selectedDeviceUID: deviceVolumeMonitor.systemDeviceUID,
                     defaultDeviceUID: deviceVolumeMonitor.defaultDeviceUID,

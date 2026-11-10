@@ -4,7 +4,12 @@
     "Unmute master volume": {
       "extractionState": "manual",
       "localizations": {
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "取消总音量静音" } }
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消总音量静音"
+          }
+        }
       }
     },
     "Master Volume": {
@@ -4293,6 +4298,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "⌘Q"
+          }
+        }
+      }
+    },
+    "Enable FineTune input in MonoSplit and start processing first.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在 MonoSplit 中启用 FineTune 输入并启动处理。"
+          }
+        }
+      }
+    },
+    "The MonoSplit audio bridge is unavailable. Enable FineTune input in MonoSplit and start processing.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MonoSplit 音频桥接不可用，请在 MonoSplit 中启用 FineTune 输入并启动处理。"
+          }
+        }
+      }
+    },
+    "The MonoSplit output or sample rate changed. Reselect MonoSplit.": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MonoSplit 输出或采样率已改变，请重新选择 MonoSplit。"
+          }
+        }
+      }
+    },
+    "Open MonoSplit tuning": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 MonoSplit 调音"
           }
         }
       }

@@ -29,6 +29,7 @@ final class OutputDelayTapController: ProcessTapControlling {
     let app: AudioApp
     private let registry: OutputDelayRegistry
     private let factory: Factory
+    private let outputGain: @MainActor (String) -> Float
     private var enabled: Bool
     private var deviceEQSettings: [String: EQSettings]
     private var usesIndependentOutputs = false
@@ -42,7 +43,11 @@ final class OutputDelayTapController: ProcessTapControlling {
     private var lifecycle: UInt64 = 0
     private var operationID: UInt64 = 0
 
-    var volume: Float = 1 { didSet { for child in allChildren { child.volume = volume } } }
+    var volume: Float = 1 { didSet {
+        for child in allChildren {
+            child.volume = volume * (usesIndependentOutputs && targets.count > 1 ? outputGain(child.currentDeviceUID ?? "") : 1)
+        }
+    } }
     var masterGain: Float = 1 { didSet { for child in allChildren { child.masterGain = masterGain } } }
     var isMuted: Bool = false { didSet { for child in allChildren { child.isMuted = isMuted } } }
     var currentDeviceVolume: Float = 1 { didSet { for child in allChildren { child.currentDeviceVolume = currentDeviceVolume } } }
@@ -55,6 +60,7 @@ final class OutputDelayTapController: ProcessTapControlling {
 
     init(app: AudioApp, targetDeviceUIDs: [String], sourceUID: String?, enabled: Bool,
          registry: OutputDelayRegistry, deviceEQSettings: [String: EQSettings] = [:],
+         outputGain: @escaping @MainActor (String) -> Float = { _ in 1 },
          factory: @escaping Factory) {
         precondition(!targetDeviceUIDs.isEmpty)
         self.app = app
@@ -65,6 +71,7 @@ final class OutputDelayTapController: ProcessTapControlling {
         self.deviceEQSettings = deviceEQSettings
         self.registry = registry
         self.factory = factory
+        self.outputGain = outputGain
     }
 
     func activate(initial: TapInitialState) throws {
@@ -77,7 +84,7 @@ final class OutputDelayTapController: ProcessTapControlling {
     }
 
     private func needsIndependentOutputs(for uids: [String], enabled: Bool, settings: [String: EQSettings]) -> Bool {
-        enabled || uids.contains { settings[$0]?.isEnabled == true }
+        enabled || uids.contains(MonoSplitEndpoint.uid) || uids.contains { settings[$0]?.isEnabled == true }
     }
 
     private func makeChildren(for uids: [String], sourceUID: String?, enabled: Bool,
@@ -88,7 +95,7 @@ final class OutputDelayTapController: ProcessTapControlling {
             for group in groups {
                 let child = try factory(group, sourceUID, enabled ? registry.control(for: group[0]) : nil)
                 created.append(child) // Include partially-activated controllers in cleanup.
-                child.volume = volume
+                child.volume = volume * (uids.count > 1 && split ? outputGain(group[0]) : 1)
                 child.masterGain = masterGain
                 child.isMuted = muted
                 child.currentDeviceVolume = currentDeviceVolume

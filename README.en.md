@@ -10,6 +10,24 @@ Your Mac speakers, Bluetooth speaker, USB interface and subwoofer can play toget
 
 **[Download](https://github.com/wait2050/FineTune-Sync/releases/latest)** · [简体中文](README.md) · [Setup guide](OUTPUT_DELAY.zh-CN.md) · [Build notes](OUTPUT_DELAY.md)
 
+## Use MonoSplit as one output device
+
+This edition can add [MonoSplit](https://github.com/wait2050/MonoSplit) to the output list: **FineTune handles playback controls; MonoSplit handles speaker tuning**. MonoSplit keeps its own process, tuning window and profiles. No system audio driver is required.
+
+```text
+Applications → FineTune app volume / master volume / mute
+             → MonoSplit → stereo-to-mono mix → crossovers / EQ / delay → speakers
+```
+
+1. Download [MonoSplit](https://github.com/wait2050/MonoSplit/releases/latest) and a bridge-enabled release from this repository.
+2. Assign physical outputs in MonoSplit, enable “FineTune 输入（作为独立设备）” in its menu bar menu, then start processing.
+3. Select **MonoSplit** in FineTune’s output list or an app’s output picker. The open button beside the device brings up the independent tuning window.
+4. Adjust routing and everyday volume in FineTune, and crossovers, REW filters, EQ, polarity and branch delay in MonoSplit. Apps explicitly pinned to older physical outputs must be switched individually.
+
+MonoSplit mixes the input as `(L + R) / 2`, for mono multiway speakers and active crossovers. The bridge adds approximately **40 ms of preroll buffering**, plus callback, device and branch delays. Recheck timing when playing alongside another output. System alerts and apps outside FineTune’s capture continue along their original paths.
+
+[English integration guide](MONOSPLIT.md) · [中文联动指南](MONOSPLIT.zh-CN.md) · [MonoSplit source](https://github.com/wait2050/MonoSplit)
+
 ## What makes this edition different?
 
 Built on [FineTune](https://github.com/ronitsingh10/FineTune), this fork focuses on listening through several devices at once. It keeps the original app volume, routing and headphone correction features.
@@ -70,3 +88,5 @@ Per-app volume and mute, up to 4× boost, multi-device routing, app EQ, user pre
 ## Credits
 
 FineTune Sync is a community fork of [FineTune by Ronit Singh](https://github.com/ronitsingh10/FineTune), distributed under the original [GPL-3.0 license](LICENSE). Thanks to the upstream project for its audio foundation and to [AutoEQ](https://github.com/jaakkopasanen/AutoEq) for headphone correction data. You can [support the original author](https://ko-fi.com/ronitsingh10).
+
+MonoSplit’s original code is [0BSD](https://github.com/wait2050/MonoSplit/blob/main/LICENSE). FineTune Sync remains GPL-3.0 as a FineTune derivative. The independent PCM transport files retain their 0BSD grant; see [third-party notices](THIRD_PARTY_NOTICES.md). Commercial use is allowed, with GPL-3.0 attribution, licensing and corresponding-source requirements when distributing this derivative.

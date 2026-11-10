@@ -161,7 +161,7 @@ final class AudioEngine {
         excluding: String? = nil,
         isAlive: ((AudioDeviceID) -> Bool)? = nil
     ) -> AudioDevice? {
-        let aliveCheck = isAlive ?? { $0.isDeviceAlive() }
+        let aliveCheck = isAlive ?? { $0 == MonoSplitEndpoint.deviceID ? MonoSplitEndpoint.readSession() != nil : $0.isDeviceAlive() }
         let connected = Dictionary(
             connectedDevices.map { ($0.uid, $0) },
             uniquingKeysWith: { _, latest in latest }
@@ -199,7 +199,7 @@ final class AudioEngine {
         self.appListCoordinator = AppListCoordinator(settingsManager: manager)
         self.autoEQProfileManager = autoEQProfileManager
         self.volumeState = VolumeState(settingsManager: manager)
-        self.isAliveCheck = isAlive ?? { $0.isDeviceAlive() }
+        self.isAliveCheck = isAlive ?? { $0 == MonoSplitEndpoint.deviceID ? MonoSplitEndpoint.readSession() != nil : $0.isDeviceAlive() }
 
         // If a custom deviceProvider is given, use it directly.
         // Otherwise create a real AudioDeviceMonitor (needed by DeviceVolumeMonitor and default tap factory).
@@ -242,16 +242,28 @@ final class AudioEngine {
         if let factory = tapFactory {
             self.tapFactory = factory
         } else {
+            let volumeMonitor = self.deviceVolumeMonitor
             self.tapFactory = { app, deviceUIDs, preferredSource in
                 OutputDelayTapController(
                     app: app, targetDeviceUIDs: deviceUIDs, sourceUID: preferredSource,
                     enabled: manager.outputDelayEnabled, registry: delayRegistry,
-                    deviceEQSettings: manager.deviceEQSettings
+                    deviceEQSettings: manager.deviceEQSettings,
+                    outputGain: { uid in
+                        guard let device = realDeviceMonitor?.device(for: uid) else { return 1 }
+                        return volumeMonitor.outputProcessingGain(for: device.id)
+                    }
                 ) { targets, source, delay in
-                    ProcessTapController(app: app, targetDeviceUIDs: targets,
-                                         deviceMonitor: realDeviceMonitor,
-                                         preferredTapSourceDeviceUID: source,
-                                         outputDelayControl: delay)
+                    let session: MonoSplitEndpoint.Session?
+                    if targets == [MonoSplitEndpoint.uid] {
+                        guard let endpoint = MonoSplitEndpoint.readSession() else {
+                            throw NSError(domain: "MonoSplit", code: 3, userInfo: [NSLocalizedDescriptionKey: L10n.string("Enable FineTune input in MonoSplit and start processing first.")])
+                        }
+                        session = endpoint
+                    } else { session = nil }
+                    return ProcessTapController(app: app, targetDeviceUIDs: session.map { [$0.clockUID] } ?? targets,
+                                                deviceMonitor: realDeviceMonitor,
+                                                preferredTapSourceDeviceUID: source,
+                                                outputDelayControl: delay, monoSplitSession: session)
                 }
             }
         }
@@ -1004,7 +1016,7 @@ final class AudioEngine {
     func setDefaultOutputDevice(_ deviceID: AudioDeviceID) -> Bool {
         guard deviceVolumeMonitor.setDefaultDevice(deviceID) else { return false }
         if let uid = deviceMonitor.outputDevices.first(where: { $0.id == deviceID })?.uid {
-            outputEchoTracker.increment(uid)
+            if uid != MonoSplitEndpoint.uid { outputEchoTracker.increment(uid) }
             lastConfirmedDefaultUID = uid
             routeFollowsDefaultApps(to: uid)
         }
@@ -1915,7 +1927,7 @@ final class AudioEngine {
     /// always use stereo mixdown (nil) — their tap never goes stale when the default changes.
     private func preferredTapSourceDeviceUID(forOutputUIDs outputUIDs: [String], isFollowsDefault: Bool) -> String? {
         guard isFollowsDefault else { return nil }
-        guard let defaultUID = deviceVolumeMonitor.defaultDeviceUID else { return nil }
+        guard let defaultUID = deviceVolumeMonitor.defaultDeviceUID, defaultUID != MonoSplitEndpoint.uid else { return nil }
         return outputUIDs.contains(defaultUID) ? defaultUID : nil
     }
 

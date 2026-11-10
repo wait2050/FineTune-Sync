@@ -38,22 +38,12 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           case "$RELEASE_TAG" in cn-v*) ;; *) echo 'Expected a cn-v custom tag'; exit 1 ;; esac
-          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          FineTune Sync：多台音箱一起放，声音对齐、音量一起调，每台还能单独调音色。
-
-          - 延迟对齐：每台输出独立补偿，配合同步测试音、麦克风校准和手动微调。
-          - 统一总音量：一个滑块或媒体键控制 FineTune 接管的播放，保留原有音量比例。
-          - 每台设备独立 EQ：分别保存 10 段曲线，可与应用 EQ 和 AutoEQ 叠加。
-
-          此安装包由当前标签的源码构建，已通过单元测试、本地化检查和包完整性检查。
-          请先退出官方 FineTune，再运行本版本；定制版使用独立配置目录。
-          本版本采用本地签名，未经过 Apple 公证；首次打开可能需要在系统设置中确认打开。
-          官方更新会通过更新 PR 合并到源码，不会直接覆盖此版本。详见仓库的 UPSTREAM_SYNC.zh-CN.md。
-          NOTES
+          cp RELEASE_NOTES.md "$RUNNER_TEMP/release-notes.md"
+          (cd release && sha256sum FineTune-Delay-macOS.zip > SHA256SUMS)
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release/FineTune-Delay-macOS.zip --clobber
+            gh release upload "$RELEASE_TAG" release/FineTune-Delay-macOS.zip release/SHA256SUMS --clobber
           else
-            gh release create "$RELEASE_TAG" release/FineTune-Delay-macOS.zip \
+            gh release create "$RELEASE_TAG" release/FineTune-Delay-macOS.zip release/SHA256SUMS \
               --verify-tag --title "FineTune Sync $RELEASE_TAG" \
               --notes-file "$RUNNER_TEMP/release-notes.md"
           fi

@@ -225,6 +225,16 @@ struct DeviceRow: View {
 
                 Spacer(minLength: 0)
 
+                if device.uid == MonoSplitEndpoint.uid {
+                    Button { MonoSplitEndpoint.openTuning() } label: {
+                        Image(systemName: "arrow.up.forward.app")
+                            .font(.system(size: 12))
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open MonoSplit tuning")
+                }
+
                 if onEQChange != nil {
                     Button {
                         withAnimation(DesignTokens.Animation.quick) {

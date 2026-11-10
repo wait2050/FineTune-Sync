@@ -144,11 +144,25 @@ final class ProcessTapController: ProcessTapControlling {
 
     // Target device UIDs for synchronized multi-output (first is clock source)
     private var targetDeviceUIDs: [String]
+    private let monoSplitSession: MonoSplitEndpoint.Session?
+    var currentDeviceUIDs: [String] {
+        guard !hardwareDeviceUIDs.isEmpty else { return [] }
+        return monoSplitSession == nil ? hardwareDeviceUIDs : [MonoSplitEndpoint.uid]
+    }
+    var currentDeviceUID: String? { currentDeviceUIDs.first }
+    private func makePCMSender(sampleRate: Double) throws -> MonoSplitPCMSender? {
+        guard let monoSplitSession else { return nil }
+        guard sampleRate == monoSplitSession.sampleRate,
+              MonoSplitEndpoint.readSession()?.identity == monoSplitSession.identity else {
+            throw NSError(domain: "MonoSplit", code: 2, userInfo: [NSLocalizedDescriptionKey: L10n.string("The MonoSplit output or sample rate changed. Reselect MonoSplit.")])
+        }
+        return try MonoSplitPCMSender(session: monoSplitSession)
+    }
     // Current active device UIDs
-    private(set) var currentDeviceUIDs: [String] = []
+    private(set) var hardwareDeviceUIDs: [String] = []
 
     /// Primary device UID (clock source, first in array) - for backward compatibility
-    var currentDeviceUID: String? { currentDeviceUIDs.first }
+    var hardwareDeviceUID: String? { hardwareDeviceUIDs.first }
 
     // Core Audio resources (primary tap) — TapResources enforces correct teardown order
     private var primaryResources = TapResources()
@@ -226,10 +240,12 @@ final class ProcessTapController: ProcessTapControlling {
         targetDeviceUIDs: [String],
         deviceMonitor: AudioDeviceMonitor? = nil,
         preferredTapSourceDeviceUID: String? = nil,
-        outputDelayControl: OutputDelayControl? = nil
+        outputDelayControl: OutputDelayControl? = nil,
+        monoSplitSession: MonoSplitEndpoint.Session? = nil
     ) {
         precondition(!targetDeviceUIDs.isEmpty, "Must have at least one target device")
         self.app = app
+        self.monoSplitSession = monoSplitSession
         self.outputDelayControl = outputDelayControl
         self.targetDeviceUIDs = targetDeviceUIDs
         self.deviceMonitor = deviceMonitor
@@ -408,7 +424,9 @@ final class ProcessTapController: ProcessTapControlling {
         // and virtual sources (burst delivery looks like drift). ON for wired/USB where the crystal
         // domains genuinely differ. Defaults OFF on an unresolvable device (less wrong on unknown BT).
         let isPrimaryBTOutput = audioDeviceID(for: plan.clockDeviceUID)?.isBluetoothDevice() ?? true
-        let tapDriftCompensation = !isTapSourceVirtual() && !isPrimaryBTOutput
+        // The bridge uses a stereo process mixdown, whose clock is independent
+        // of MonoSplit's physical output (including Bluetooth 44.1 ↔ 48 kHz).
+        let tapDriftCompensation = monoSplitSession != nil || (!isTapSourceVirtual() && !isPrimaryBTOutput)
 
         return [
             kAudioAggregateDeviceNameKey: name,
@@ -444,10 +462,10 @@ final class ProcessTapController: ProcessTapControlling {
     /// brief clean dip rather than a crackle. The switch can't be fully gapless: the BT link itself
     /// renegotiates across the profile change.
     func recreateForOutputRateChange() async throws {
-        guard activated, let primaryUID = currentDeviceUIDs.first else { return }
+        guard activated, let primaryUID = hardwareDeviceUIDs.first else { return }
         guard primaryResources.tapDescription != nil else { throw CrossfadeError.noTapDescription }
         logger.info("[RATE] \(self.app.name): recreating aggregate at new rate")
-        try await performDestructiveDeviceSwitch(to: primaryUID, allDeviceUIDs: currentDeviceUIDs, sourceAlreadySilent: true)
+        try await performDestructiveDeviceSwitch(to: primaryUID, allDeviceUIDs: hardwareDeviceUIDs, sourceAlreadySilent: true)
     }
 
     private func preferredStereoChannels(for deviceUID: String?) -> (left: Int, right: Int) {
@@ -691,6 +709,7 @@ final class ProcessTapController: ProcessTapControlling {
         nextCallbackID += 1
         _primaryCallbackID = nextCallbackID
         let activateCallbackID = nextCallbackID
+        let pcmSender = try makePCMSender(sampleRate: sampleRate)
         err = AudioDeviceCreateIOProcIDWithBlock(&primaryResources.deviceProcID, primaryResources.aggregateDeviceID, queue) { @Sendable [weak self] _, inInputData, _, outOutputData, _ in
             guard let self else {
                 // Zero output to prevent garbage audio if controller is deallocated
@@ -701,6 +720,7 @@ final class ProcessTapController: ProcessTapControlling {
                 return
             }
             self.processAudioCallback(inInputData, to: outOutputData, callbackID: activateCallbackID, delayBuffers: delayBuffers)
+            pcmSender?.consume(outOutputData, left: 0, right: 1)
         }
         guard err == noErr else {
             cleanupPartialActivation()
@@ -728,7 +748,7 @@ final class ProcessTapController: ProcessTapControlling {
         }
 
         // Track current devices for external queries
-        currentDeviceUIDs = targetDeviceUIDs
+        hardwareDeviceUIDs = targetDeviceUIDs
 
         activated = true
         logger.info("Tap activated for \(self.app.name) on \(self.targetDeviceUIDs.count) device(s)")
@@ -753,7 +773,7 @@ final class ProcessTapController: ProcessTapControlling {
             return
         }
 
-        guard newDeviceUIDs != currentDeviceUIDs else { return }
+        guard newDeviceUIDs != hardwareDeviceUIDs else { return }
 
         let startTime = CFAbsoluteTimeGetCurrent()
         logger.info("[UPDATE] Switching \(self.app.name) to \(newDeviceUIDs.count) device(s)\(sourceDeviceDead ? " (source dead)" : "")")
@@ -790,7 +810,7 @@ final class ProcessTapController: ProcessTapControlling {
         }
 
         targetDeviceUIDs = newDeviceUIDs
-        currentDeviceUIDs = newDeviceUIDs
+        hardwareDeviceUIDs = newDeviceUIDs
 
         let endTime = CFAbsoluteTimeGetCurrent()
         logger.info("[UPDATE] === END === Total time: \((endTime - startTime) * 1000)ms")
@@ -802,10 +822,10 @@ final class ProcessTapController: ProcessTapControlling {
     func refreshTapSource(_ preferredDeviceUID: String?) async throws {
         let oldPreferred = self.preferredTapSourceDeviceUID
         self.preferredTapSourceDeviceUID = preferredDeviceUID
-        guard activated, let primaryUID = currentDeviceUIDs.first else { return }
+        guard activated, let primaryUID = hardwareDeviceUIDs.first else { return }
         guard oldPreferred != preferredDeviceUID else { return }
 
-        let allUIDs = currentDeviceUIDs
+        let allUIDs = hardwareDeviceUIDs
         logger.info("[REFRESH] Tap source changing for \(self.app.name): \(oldPreferred ?? "mixdown") → \(preferredDeviceUID ?? "mixdown")")
 
         crossfadeTask?.cancel()
@@ -1086,6 +1106,7 @@ final class ProcessTapController: ProcessTapControlling {
         nextCallbackID += 1
         _secondaryCallbackID = nextCallbackID
         let secondaryCallbackID = nextCallbackID
+        let pcmSender = try makePCMSender(sampleRate: try secondaryResources.aggregateDeviceID.readNominalSampleRate())
         err = AudioDeviceCreateIOProcIDWithBlock(&secondaryResources.deviceProcID, secondaryResources.aggregateDeviceID, queue) { @Sendable [weak self] _, inInputData, _, outOutputData, _ in
             guard let self else {
                 // Zero output to prevent garbage audio if controller is deallocated
@@ -1096,6 +1117,7 @@ final class ProcessTapController: ProcessTapControlling {
                 return
             }
             self.processAudioCallback(inInputData, to: outOutputData, callbackID: secondaryCallbackID, delayBuffers: delayBuffers)
+            pcmSender?.consume(outOutputData, left: 0, right: 1)
         }
         guard err == noErr else {
             secondaryResources.destroy()
@@ -1278,6 +1300,7 @@ final class ProcessTapController: ProcessTapControlling {
         nextCallbackID += 1
         _primaryCallbackID = nextCallbackID
         let switchCallbackID = nextCallbackID
+        let pcmSender = try makePCMSender(sampleRate: try newResources.aggregateDeviceID.readNominalSampleRate())
         err = AudioDeviceCreateIOProcIDWithBlock(&newResources.deviceProcID, newResources.aggregateDeviceID, queue) { @Sendable [weak self] _, inInputData, _, outOutputData, _ in
             guard let self else {
                 // Zero output to prevent garbage audio if controller is deallocated
@@ -1288,6 +1311,7 @@ final class ProcessTapController: ProcessTapControlling {
                 return
             }
             self.processAudioCallback(inInputData, to: outOutputData, callbackID: switchCallbackID, delayBuffers: delayBuffers)
+            pcmSender?.consume(outOutputData, left: 0, right: 1)
         }
         guard err == noErr else {
             newResources.destroy()
@@ -1306,7 +1330,7 @@ final class ProcessTapController: ProcessTapControlling {
         primaryResources.destroy()
         primaryResources = newResources
         targetDeviceUIDs = outputUIDs
-        currentDeviceUIDs = outputUIDs
+        hardwareDeviceUIDs = outputUIDs
 
         if let deviceSampleRate = try? primaryResources.aggregateDeviceID.readNominalSampleRate() {
             rampCoefficient = 1 - exp(-1 / (Float(deviceSampleRate) * 0.030))

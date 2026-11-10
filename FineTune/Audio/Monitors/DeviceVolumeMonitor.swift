@@ -157,6 +157,7 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
     #endif
 
     func outputVolumeBackend(for deviceID: AudioDeviceID) -> VolumeControlTier {
+        if deviceID == MonoSplitEndpoint.deviceID { return .software }
         guard deviceID.isValid else { return .software }
         if let uid = deviceMonitor.device(for: deviceID)?.uid,
            let override = settingsManager.getDeviceVolumeTierOverride(for: uid) {
@@ -173,6 +174,7 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
     }
 
     private func autoDetectBackend(for deviceID: AudioDeviceID) -> VolumeControlTier {
+        if deviceID == MonoSplitEndpoint.deviceID { return .software }
         if deviceID.hasOutputVolumeControl() {
             return .hardware
         }
@@ -405,6 +407,13 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
     /// Sets a device as the macOS system default output device
     @discardableResult
     func setDefaultDevice(_ deviceID: AudioDeviceID) -> Bool {
+        if deviceID == MonoSplitEndpoint.deviceID {
+            guard MonoSplitEndpoint.readSession() != nil else { return false }
+            UserDefaults.standard.set(true, forKey: "monoSplitDefaultOutput")
+            defaultDeviceID = deviceID
+            defaultDeviceUID = MonoSplitEndpoint.uid
+            return true
+        }
         guard deviceID.isValid else {
             logger.warning("Cannot set default device: invalid device ID")
             return false
@@ -412,6 +421,8 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
 
         do {
             try AudioDeviceID.setDefaultOutputDevice(deviceID)
+            UserDefaults.standard.set(false, forKey: "monoSplitDefaultOutput")
+            refreshDefaultDevice()
             logger.debug("Set default output device to \(deviceID)")
             return true
         } catch {
@@ -546,6 +557,11 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
     // MARK: - Private Methods
 
     private func refreshDefaultDevice() {
+        if UserDefaults.standard.bool(forKey: "monoSplitDefaultOutput"), MonoSplitEndpoint.readSession() != nil {
+            defaultDeviceID = MonoSplitEndpoint.deviceID
+            defaultDeviceUID = MonoSplitEndpoint.uid
+            return
+        }
         do {
             let newDeviceID = try AudioDeviceID.readDefaultOutputDevice()
 
@@ -576,7 +592,7 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
             // (e.g., AudioEngine enforcing priority-based routing).
             if isSystemFollowingDefault {
                 refreshDefaultDevice()
-                if defaultDeviceID.isValid {
+                if defaultDeviceID.isValid && defaultDeviceID != MonoSplitEndpoint.deviceID {
                     setSystemDevice(defaultDeviceID)
                     refreshSystemDevice()
                     if systemDeviceUID != defaultDeviceUID {
@@ -650,6 +666,7 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
 
     /// Sets the system output device (for alerts, notifications, system sounds)
     func setSystemDevice(_ deviceID: AudioDeviceID) {
+        guard deviceID != MonoSplitEndpoint.deviceID else { return }
         guard deviceID.isValid else {
             logger.warning("Cannot set system device: invalid device ID")
             return
@@ -759,9 +776,11 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         let newVolumeIDs = currentDeviceIDs.subtracting(trackedVolumeIDs)
         let newMuteIDs = currentDeviceIDs.subtracting(trackedMuteIDs)
         for deviceID in newVolumeIDs {
+            if deviceID == MonoSplitEndpoint.deviceID { continue }
             addVolumeListener(for: deviceID)
         }
         for deviceID in newMuteIDs {
+            if deviceID == MonoSplitEndpoint.deviceID { continue }
             addMuteListener(for: deviceID)
         }
 
@@ -957,7 +976,7 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
     /// one device without enumerating the whole device list.
     private func readOneState(for deviceID: AudioDeviceID, device: AudioDevice) {
         // Skip devices that HAL reports as dead (mid-disconnect)
-        guard deviceID.isDeviceAlive() else { return }
+        guard deviceID == MonoSplitEndpoint.deviceID || deviceID.isDeviceAlive() else { return }
 
         let backend = outputVolumeBackend(for: deviceID)
 
@@ -1053,6 +1072,11 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
                 guard let self, self.isObservingDeviceList else { return }
                 self.logger.debug("Device list changed, refreshing volume listeners")
                 self.refreshDeviceListeners()
+                if self.defaultDeviceID == MonoSplitEndpoint.deviceID && MonoSplitEndpoint.readSession() == nil {
+                    let previous = self.defaultDeviceUID
+                    self.refreshDefaultDevice()
+                    if let uid = self.defaultDeviceUID, uid != previous { self.onDefaultDeviceChanged?(uid) }
+                }
                 self.subscribeOutputDeviceListObservation()
             }
         }

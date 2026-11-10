@@ -58,6 +58,8 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
     )
 
     private var knownDeviceUIDs: Set<String> = []
+    private var monoSplitTask: Task<Void, Never>?
+    private var monoSplitIdentity: String?
     private var knownInputDeviceUIDs: Set<String> = []
 
     /// Listeners for kAudioDevicePropertyDataSource changes on built-in devices (headphone jack detection)
@@ -92,6 +94,24 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
         logger.debug("Starting audio device monitor")
 
         refresh()
+        monoSplitIdentity = MonoSplitEndpoint.readSession()?.identity
+        monoSplitTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled, let self else { return }
+                let identity = MonoSplitEndpoint.readSession()?.identity
+                guard identity != self.monoSplitIdentity else { continue }
+                let previous = self.monoSplitIdentity
+                self.monoSplitIdentity = identity
+                // A new session has a new clock/mapping. Retire routes using the
+                // old one before announcing the replacement under the stable UID.
+                if previous != nil && identity != nil {
+                    self.onDeviceDisconnected?(MonoSplitEndpoint.uid, "MonoSplit")
+                    self.knownDeviceUIDs.remove(MonoSplitEndpoint.uid)
+                }
+                self.handleDeviceListChanged()
+            }
+        }
 
         deviceListListenerBlock = { [weak self] _, _ in
             Task { @MainActor [weak self] in
@@ -115,6 +135,8 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
         logger.debug("Stopping audio device monitor")
 
         deviceListDebounceTask?.cancel()
+        monoSplitTask?.cancel()
+        monoSplitTask = nil
         deviceListDebounceTask = nil
 
         if let block = deviceListListenerBlock {
@@ -212,6 +234,8 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
                 }
             }
 
+            if MonoSplitEndpoint.readSession() != nil { outputDeviceList.append(MonoSplitEndpoint.device) }
+
             // Update output devices
             outputDevices = outputDeviceList.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             knownDeviceUIDs = Set(outputDeviceList.map(\.uid))
@@ -224,8 +248,8 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
             inputDevicesByUID = Dictionary(uniqueKeysWithValues: inputDevices.map { ($0.uid, $0) })
             inputDevicesByID = Dictionary(uniqueKeysWithValues: inputDevices.map { ($0.id, $0) })
 
-            syncDataSourceListeners(outputDeviceIDs: outputDeviceList.map(\.id))
-            let btOutputIDs = Set(outputDeviceList.filter { $0.id.isBluetoothDevice() }.map(\.id))
+            syncDataSourceListeners(outputDeviceIDs: outputDeviceList.filter { $0.uid != MonoSplitEndpoint.uid }.map(\.id))
+            let btOutputIDs = Set(outputDeviceList.filter { $0.uid != MonoSplitEndpoint.uid && $0.id.isBluetoothDevice() }.map(\.id))
             syncSampleRateListeners(btOutputDeviceIDs: btOutputIDs)
 
         } catch {

@@ -236,6 +236,9 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
                     ?? NSImage()
                 let bundleID = resolvedApp?.bundleIdentifier ?? objectID.readProcessBundleID()
 
+                // MonoSplit is a downstream renderer, never a new source to tap.
+                if bundleID?.hasPrefix("com.monosplit.") == true { continue }
+
                 // Skip system daemons (siri, coreaudio, etc.) - they shouldn't appear in the apps list
                 if isSystemDaemon(bundleID: bundleID, name: name) { continue }
 

@@ -10,6 +10,24 @@ Mac 内置扬声器、蓝牙音箱、USB 声卡和低音炮，接上了，也该
 
 **[下载最新版](https://github.com/wait2050/FineTune-Sync/releases/latest)** · [English](README.en.md) · [使用说明](OUTPUT_DELAY.zh-CN.md) · [同步测试与自动校准](CALIBRATION.zh-CN.md)
 
+## 把 MonoSplit 当作一台输出设备
+
+这一版可以把 [MonoSplit](https://github.com/wait2050/MonoSplit) 接入设备列表：**FineTune 管日常播放，MonoSplit 管音箱调音**。MonoSplit 保留独立进程、窗口和配置，无需系统音频驱动。
+
+```text
+各个应用 → FineTune 应用音量 / 总音量 / 静音
+        → MonoSplit → 单声道混合 → 三路分频 / EQ / 延迟 → 实际扬声器
+```
+
+1. 下载 [MonoSplit](https://github.com/wait2050/MonoSplit/releases/latest) 和本仓库支持联动的版本。
+2. 在 MonoSplit 配好物理输出，勾选菜单栏中的「FineTune 输入（作为独立设备）」，然后启动处理。
+3. 在 FineTune 的输出列表或某个应用的输出选择器里选 **MonoSplit**。设备旁的打开按钮可以显示独立调音窗口。
+4. 在 FineTune 调音量和路由，在 MonoSplit 调分频、REW 参数、EQ、极性与延迟。以前手动指定了物理设备的应用，需要单独切到 MonoSplit。
+
+MonoSplit 把输入按 `(L + R) / 2` 混为单声道，适合单声道多路音箱与主动分频。桥接增加约 **40 ms 预缓冲**，还需计入回调、设备及支路延迟；与其他输出合播时应重新检查同步。系统提示音和未被 FineTune 接管的应用继续沿原路径播放。
+
+[中文联动指南](MONOSPLIT.zh-CN.md) · [English integration guide](MONOSPLIT.md) · [MonoSplit 源码](https://github.com/wait2050/MonoSplit)
+
 ## 这一版有什么不同？
 
 基于 [FineTune](https://github.com/ronitsingh10/FineTune) 扩展，重点照顾「几台设备一起听」这件事。原版的应用音量、音频路由和耳机校正等功能也都保留。
@@ -80,5 +98,7 @@ Mac 内置扬声器、蓝牙音箱、USB 声卡和低音炮，接上了，也该
 ## 开源与致谢
 
 FineTune Sync 是 [Ronit Singh 的 FineTune](https://github.com/ronitsingh10/FineTune) 的社区扩展版，保留原作者署名与 [GPL-3.0 许可证](LICENSE)。感谢上游提供应用音量、路由和音频处理的基础，也感谢 [AutoEQ](https://github.com/jaakkopasanen/AutoEq) 的耳机校正资料。
+
+MonoSplit 自有代码采用 [0BSD](https://github.com/wait2050/MonoSplit/blob/main/LICENSE)。本仓库作为 FineTune 衍生版，整体继续使用 GPL-3.0；独立 PCM 桥接文件的 0BSD 许可见 [第三方声明](THIRD_PARTY_NOTICES.md)。允许商业使用，分发本衍生版时仍须遵守 GPL-3.0 的署名、许可及对应源码要求。
 
 喜欢原版 FineTune，也可以 [支持原作者](https://ko-fi.com/ronitsingh10)。本仓库负责这里的多设备同步、总音量、设备 EQ 与中文扩展。

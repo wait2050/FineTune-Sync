@@ -1,1 +1,2 @@
 FineTune.xcodeproj/project.pbxproj filter=scrub-dev-team
+third-party-licenses/** linguist-vendored -whitespace
